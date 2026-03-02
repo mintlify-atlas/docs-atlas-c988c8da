@@ -1,0 +1,90 @@
+{
+  "projectType": "general",
+  "projectName": "deBridge API Integrator Examples",
+  "projectDescription": "Example scripts demonstrating how to integrate with the deBridge API for cross-chain transfers and swaps.",
+  "theme": "palm",
+  "primaryColor": "#6366f1",
+  "lightColor": "#818cf8",
+  "darkColor": "#4f46e5",
+  "navigation": {
+    "groups": [
+      {
+        "group": "Get Started",
+        "pages": [
+          "introduction",
+          "setup",
+          "quickstart"
+        ]
+      },
+      {
+        "group": "Cross-Chain Orders",
+        "pages": [
+          "examples/cross-chain/overview",
+          "examples/cross-chain/evm-to-evm",
+          "examples/cross-chain/evm-to-solana",
+          "examples/cross-chain/solana-to-evm",
+          "examples/cross-chain/tron-to-solana"
+        ]
+      },
+      {
+        "group": "Same-Chain Swaps",
+        "pages": [
+          "examples/same-chain/overview",
+          "examples/same-chain/token-swaps",
+          "examples/same-chain/estimation"
+        ]
+      },
+      {
+        "group": "Hooks",
+        "pages": [
+          "examples/hooks/overview",
+          "examples/hooks/evm-to-evm",
+          "examples/hooks/solana-to-evm"
+        ]
+      },
+      {
+        "group": "Order Management",
+        "pages": [
+          "examples/order-management/overview",
+          "examples/order-management/query-status",
+          "examples/order-management/get-order-id",
+          "examples/order-management/cancel-order"
+        ]
+      },
+      {
+        "group": "Affiliate Operations",
+        "pages": [
+          "examples/affiliates/overview",
+          "examples/affiliates/basic-order",
+          "examples/affiliates/batch-withdraw"
+        ]
+      },
+      {
+        "group": "Reference",
+        "pages": [
+          "reference/api-endpoints",
+          "reference/supported-chains",
+          "reference/utility-functions"
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Cross-chain token transfers between EVM, Solana, and Tron",
+    "Same-chain token swaps with estimation",
+    "Hook integration for post-transfer actions (e.g., Aave supply)",
+    "Order status tracking and management",
+    "Affiliate fee integration",
+    "Token approval and balance checking utilities"
+  ],
+  "publicApiSurface": [
+    "createDebridgeBridgeOrder(params)",
+    "createDebridgeBridgeHook(params)",
+    "getOrderIdByTransactionHash(txHash)",
+    "getOrderStatusByOrderId(orderId)",
+    "generateAaveSupplyCalldata(address)",
+    "DEBRIDGE_API endpoint",
+    "CHAIN_IDS constants",
+    "Token address mappings (USDC, USDT, etc.)"
+  ]
+}
