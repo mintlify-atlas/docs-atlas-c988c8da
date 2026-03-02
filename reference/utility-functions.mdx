@@ -170,6 +170,121 @@ const orderWithHook = await createDebridgeBridgeHook({
 });
 ```
 
+### createDeBridgeSameChainSwap
+
+Create a same-chain token swap transaction.
+
+```typescript
+createDeBridgeSameChainSwap(params: SameChainSwapInput): Promise<SameChainSwapResponse>
+```
+
+<ParamField path="params" type="SameChainSwapInput" required>
+  Same-chain swap parameters
+  
+  <ParamField path="chainId" type="string" required>
+    Chain ID where the swap occurs
+  </ParamField>
+  
+  <ParamField path="tokenIn" type="string" required>
+    Input token address
+  </ParamField>
+  
+  <ParamField path="tokenInAmount" type="string" required>
+    Amount to swap in token's smallest unit
+  </ParamField>
+  
+  <ParamField path="tokenOut" type="string" required>
+    Output token address
+  </ParamField>
+  
+  <ParamField path="tokenOutRecipient" type="string" required>
+    Recipient address
+  </ParamField>
+  
+  <ParamField path="senderAddress" type="string" required>
+    Sender's wallet address
+  </ParamField>
+  
+  <ParamField path="srcChainPriorityLevel" type="string">
+    Priority level: "normal" or "high" (default: "normal")
+  </ParamField>
+  
+  <ParamField path="slippage" type="string">
+    Slippage tolerance (default: "auto")
+  </ParamField>
+  
+  <ParamField path="referralCode" type="number">
+    Referral code for tracking
+  </ParamField>
+  
+  <ParamField path="affiliateFeePercent" type="number">
+    Affiliate fee percentage (0-100)
+  </ParamField>
+</ParamField>
+
+**Location:** `src/utils/deBridge/sameChainSwap.ts:4`
+
+**Example:**
+```typescript
+const swap = await createDeBridgeSameChainSwap({
+  chainId: "137",
+  tokenIn: "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359", // USDC
+  tokenInAmount: "1000000", // 1 USDC
+  tokenOut: "0x0000000000000000000000000000000000000000", // MATIC
+  tokenOutRecipient: "0x...",
+  senderAddress: "0x..."
+});
+```
+
+### createDeBridgeSameChainSwapEstimate
+
+Get an estimation for a same-chain token swap without creating a transaction.
+
+```typescript
+createDeBridgeSameChainSwapEstimate(params: SameChainSwapEstimateInput): Promise<SameChainSwapEstimateResponse>
+```
+
+<ParamField path="params" type="SameChainSwapEstimateInput" required>
+  Estimation parameters
+  
+  <ParamField path="chainId" type="string" required>
+    Chain ID where the swap will occur
+  </ParamField>
+  
+  <ParamField path="tokenIn" type="string" required>
+    Input token address
+  </ParamField>
+  
+  <ParamField path="tokenInAmount" type="string" required>
+    Amount to swap in token's smallest unit
+  </ParamField>
+  
+  <ParamField path="tokenOut" type="string" required>
+    Output token address
+  </ParamField>
+  
+  <ParamField path="slippage" type="string">
+    Slippage tolerance (default: "auto")
+  </ParamField>
+  
+  <ParamField path="affiliateFeePercent" type="number">
+    Affiliate fee percentage for calculation
+  </ParamField>
+</ParamField>
+
+**Location:** `src/utils/deBridge/sameChainSwapEstimate.ts:4`
+
+**Example:**
+```typescript
+const estimate = await createDeBridgeSameChainSwapEstimate({
+  chainId: "137",
+  tokenIn: "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359",
+  tokenInAmount: "1000000",
+  tokenOut: "0x0000000000000000000000000000000000000000"
+});
+console.log("Expected output:", estimate.tokenOut.amount);
+```
+
 ## HTTP Utilities
 
 ### post
