@@ -1,0 +1,373 @@
+---
+title: "EVM to Solana Transfers"
+description: "Bridge tokens from EVM chains (Polygon, Arbitrum, Ethereum) to Solana"
+---
+
+## Overview
+
+You can bridge tokens from any EVM-compatible chain to Solana. The process is similar to EVM-to-EVM transfers, but you must provide a Solana address as the recipient.
+
+## Complete Example: Polygon USDC to Solana USDC
+
+This example transfers 0.2 USDC from Polygon to Solana.
+
+```typescript poly-usdc-to-sol-usdc.ts
+import 'dotenv/config';
+import {
+  ethers,
+  Wallet,
+  TransactionResponse,
+  TransactionReceipt,
+  TransactionRequest
+} from "ethers";
+import { createDebridgeBridgeOrder } from '../../utils/deBridge/createDeBridgeOrder';
+import { deBridgeOrderInput } from '../../types';
+import { getEnvConfig, getJsonRpcProviders } from '../../utils';
+import { USDC } from '../../utils/tokens';
+import { CHAIN_IDS } from '../../utils/chains';
+
+async function main() {
+  const { privateKey } = getEnvConfig();
+  const { polygonProvider } = await getJsonRpcProviders();
+
+  // Setup wallet and signer
+  const wallet = new Wallet(privateKey);
+  const signer = wallet.connect(polygonProvider);
+  const senderAddress = await signer.getAddress();
+  console.log(`Wallet Address (Signer): ${senderAddress}`);
+
+  // Prepare order parameters
+  const usdcDecimals = 6;
+  const amountToSend = "0.2";
+  const solUserAddress = "862oLANNqhdXyUCwLJPBqUHrScrqNR4yoGWGTxjZftKs";
+
+  const amountInAtomicUnit = ethers.parseUnits(amountToSend, usdcDecimals);
+
+  const orderInput: deBridgeOrderInput = {
+    srcChainId: CHAIN_IDS.Polygon.toString(),
+    srcChainTokenIn: USDC.POLYGON,
+    srcChainTokenInAmount: amountInAtomicUnit.toString(),
+    dstChainId: CHAIN_IDS.Solana.toString(),
+    dstChainTokenOut: USDC.SOLANA,
+    dstChainTokenOutRecipient: solUserAddress,
+    account: senderAddress,
+    srcChainOrderAuthorityAddress: wallet.address,
+    dstChainOrderAuthorityAddress: solUserAddress,
+    affiliateFeePercent: 0.1,
+    affiliateFeeRecipient: wallet.address,
+  };
+
+  console.log("Creating deBridge order...");
+  const order = await createDebridgeBridgeOrder(orderInput);
+
+  if (!order?.tx?.to || !order?.tx?.data) {
+    throw new Error("Invalid transaction request from createDebridgeBridgeOrder");
+  }
+
+  console.log("Order Estimation:", order.estimation);
+  const transactionRequest: TransactionRequest = order.tx;
+
+  const spenderAddress = transactionRequest.to;
+  if (!spenderAddress) {
+    throw new Error("Missing spender address");
+  }
+
+  // Send bridge transaction
+  try {
+    console.log("Sending bridge transaction...");
+    const txResponse: TransactionResponse = await signer.sendTransaction(transactionRequest);
+
+    console.log(`Transaction sent: ${txResponse.hash}`);
+    console.log(`View on Polygonscan: https://polygonscan.com/tx/${txResponse.hash}`);
+
+    const txReceipt: TransactionReceipt | null = await txResponse.wait();
+
+    if (txReceipt) {
+      console.log(`Status: ${txReceipt.status === 1 ? 'Success' : 'Failed'}`);
+      console.log(`Block: ${txReceipt.blockNumber}`);
+      console.log(`Gas used: ${txReceipt.gasUsed.toString()}`);
+    } else {
+      console.error("Transaction receipt was null");
+    }
+  } catch (error) {
+    console.error("Error sending transaction:", error);
+    process.exitCode = 1;
+  }
+}
+
+main().catch((error) => {
+  console.error("Fatal error:", error);
+  process.exitCode = 1;
+});
+```
+
+## Key Differences from EVM-to-EVM
+
+### Solana Address Format
+
+Solana addresses are base58-encoded strings (32-44 characters):
+
+```typescript
+// Solana address format
+const solanaAddress = "862oLANNqhdXyUCwLJPBqUHrScrqNR4yoGWGTxjZftKs";
+
+// Use as recipient
+const orderInput = {
+  // ...
+  dstChainId: CHAIN_IDS.Solana.toString(),
+  dstChainTokenOut: USDC.SOLANA,
+  dstChainTokenOutRecipient: solanaAddress,
+  dstChainOrderAuthorityAddress: solanaAddress,
+};
+```
+
+### Authority Addresses
+
+<Note>
+  For cross-chain orders to Solana, set `dstChainOrderAuthorityAddress` to the Solana recipient address.
+</Note>
+
+```typescript
+const orderInput: deBridgeOrderInput = {
+  srcChainId: CHAIN_IDS.Polygon.toString(),
+  srcChainTokenIn: USDC.POLYGON,
+  srcChainTokenInAmount: amountInAtomicUnit.toString(),
+  dstChainId: CHAIN_IDS.Solana.toString(),
+  dstChainTokenOut: USDC.SOLANA,
+  dstChainTokenOutRecipient: solanaAddress,
+  account: evmSenderAddress,
+  srcChainOrderAuthorityAddress: evmSenderAddress,
+  dstChainOrderAuthorityAddress: solanaAddress, // Solana address
+};
+```
+
+## Supported Token Types
+
+### USDC Transfers
+
+Transfer USDC from any EVM chain to Solana:
+
+```typescript
+import { USDC } from '../../utils/tokens';
+
+const orderInput = {
+  srcChainId: CHAIN_IDS.Polygon.toString(),
+  srcChainTokenIn: USDC.POLYGON,
+  // ...
+  dstChainId: CHAIN_IDS.Solana.toString(),
+  dstChainTokenOut: USDC.SOLANA,
+};
+```
+
+### Native Token Swaps
+
+Bridge and swap to Solana native tokens:
+
+```typescript poly-usdc-to-wsol.ts
+const orderInput: deBridgeOrderInput = {
+  srcChainId: CHAIN_IDS.Polygon.toString(),
+  srcChainTokenIn: USDC.POLYGON,
+  srcChainTokenInAmount: amountInAtomicUnit.toString(),
+  dstChainId: CHAIN_IDS.Solana.toString(),
+  dstChainTokenOut: "So11111111111111111111111111111111111111112", // wSOL
+  dstChainTokenOutRecipient: solanaAddress,
+  account: senderAddress,
+};
+```
+
+## Example: Base to Solana
+
+```typescript usdc-base-to-sol.ts
+const { baseProvider } = await getJsonRpcProviders();
+const signer = wallet.connect(baseProvider);
+
+const orderInput: deBridgeOrderInput = {
+  srcChainId: CHAIN_IDS.Base.toString(),
+  srcChainTokenIn: USDC.BASE,
+  srcChainTokenInAmount: ethers.parseUnits("1", 6).toString(),
+  dstChainId: CHAIN_IDS.Solana.toString(),
+  dstChainTokenOut: USDC.SOLANA,
+  dstChainTokenOutRecipient: solanaAddress,
+  account: senderAddress,
+  srcChainOrderAuthorityAddress: wallet.address,
+  dstChainOrderAuthorityAddress: solanaAddress,
+};
+```
+
+## Affiliate Fees
+
+You can earn fees on EVM-to-Solana transfers:
+
+```typescript
+const orderInput: deBridgeOrderInput = {
+  // ... other parameters
+  affiliateFeePercent: 0.1, // 0.1% fee
+  affiliateFeeRecipient: wallet.address, // Your EVM address
+};
+```
+
+<Info>
+  Affiliate fees are collected on the source chain (EVM) in the source token.
+</Info>
+
+## Validation
+
+### Validate Solana Address
+
+Ensure the Solana address is valid:
+
+```typescript
+const SOLANA_ADDRESS_REGEX = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
+
+function isValidSolanaAddress(address: string): boolean {
+  return SOLANA_ADDRESS_REGEX.test(address);
+}
+
+const solanaAddress = "862oLANNqhdXyUCwLJPBqUHrScrqNR4yoGWGTxjZftKs";
+if (!isValidSolanaAddress(solanaAddress)) {
+  throw new Error("Invalid Solana address");
+}
+```
+
+### Verify Token Addresses
+
+```typescript
+// Solana USDC address
+const SOLANA_USDC = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
+
+// Wrapped SOL address
+const WRAPPED_SOL = "So11111111111111111111111111111111111111112";
+
+const orderInput = {
+  // ...
+  dstChainTokenOut: SOLANA_USDC,
+};
+```
+
+## Transaction Flow
+
+<Steps>
+  <Step title="Create order">
+    Call `createDebridgeBridgeOrder` with EVM source and Solana destination
+  </Step>
+  
+  <Step title="Approve tokens (if needed)">
+    Approve the deBridge contract to spend your tokens on the EVM chain
+  </Step>
+  
+  <Step title="Submit transaction">
+    Send the transaction on the EVM source chain
+  </Step>
+  
+  <Step title="Wait for fulfillment">
+    Tokens arrive in the Solana recipient's wallet after the order is fulfilled
+  </Step>
+</Steps>
+
+## Monitoring Orders
+
+Track your cross-chain order status:
+
+```typescript
+import { getOrderStatus } from '../../utils/deBridge/orderStatus';
+
+const txHash = txResponse.hash;
+
+// Wait a few seconds for order to be created
+await new Promise(resolve => setTimeout(resolve, 5000));
+
+const orderStatus = await getOrderStatus({
+  srcChainTxHash: txHash,
+  srcChainId: CHAIN_IDS.Polygon.toString(),
+});
+
+console.log("Order status:", orderStatus.status);
+if (orderStatus.dstChainTxHash) {
+  console.log(`Solana tx: https://solscan.io/tx/${orderStatus.dstChainTxHash}`);
+}
+```
+
+## Common Token Addresses
+
+| Token | Solana Address | Decimals |
+|-------|----------------|----------|
+| USDC | `EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v` | 6 |
+| wSOL | `So11111111111111111111111111111111111111112` | 9 |
+| USDT | `Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB` | 6 |
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Validate Solana addresses">
+    Always validate the Solana recipient address format:
+    
+    ```typescript
+    if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(solanaAddress)) {
+      throw new Error("Invalid Solana address format");
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Use correct chain IDs">
+    Solana chain ID in deBridge is `7565164`:
+    
+    ```typescript
+    import { CHAIN_IDS } from '../../utils/chains';
+    
+    const orderInput = {
+      dstChainId: CHAIN_IDS.Solana.toString(), // "7565164"
+    };
+    ```
+  </Accordion>
+
+  <Accordion title="Set authority addresses correctly">
+    Set destination authority to the Solana recipient:
+    
+    ```typescript
+    const orderInput = {
+      dstChainTokenOutRecipient: solanaAddress,
+      dstChainOrderAuthorityAddress: solanaAddress, // Same as recipient
+    };
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Troubleshooting
+
+<Warning>
+  Ensure the Solana recipient address is a valid base58-encoded public key.
+</Warning>
+
+### Common Issues
+
+**Invalid Solana address**: Verify the address format:
+
+```typescript
+const solanaAddress = "862oLANNqhdXyUCwLJPBqUHrScrqNR4yoGWGTxjZftKs";
+console.log("Address length:", solanaAddress.length); // Should be 32-44
+```
+
+**Wrong token address**: Use the correct Solana token address:
+
+```typescript
+// Correct: Solana USDC
+const dstToken = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
+
+// Incorrect: Using EVM USDC address
+const dstToken = "0x...";
+```
+
+**Authority address mismatch**: Ensure both recipient and authority are Solana addresses:
+
+```typescript
+const orderInput = {
+  dstChainTokenOutRecipient: solanaAddress, // Solana address
+  dstChainOrderAuthorityAddress: solanaAddress, // Must be Solana address too
+};
+```
+
+## Next Steps
+
+- Learn about [Solana to EVM transfers](/examples/cross-chain/solana-to-evm)
+- Explore [Tron to Solana transfers](/examples/cross-chain/tron-to-solana)
+- See [order status tracking](/examples/order-management/query-status)

@@ -1,80 +1,400 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: Quick start
+description: Run your first cross-chain swap with deBridge in under 5 minutes
 ---
 
-## Get started in three steps
+## Overview
 
-Get your documentation site running locally and make your first customization.
+In this quickstart, you'll execute a cross-chain swap that transfers 0.1 USDC from Polygon to Arbitrum. This example demonstrates the complete flow: creating an order, approving token spending, and submitting the bridge transaction.
 
-### Step 1: Set up your local environment
+<Note>
+  **Before you begin:** Make sure you've completed the [environment setup](/setup) and have a small amount of USDC on Polygon plus MATIC for gas fees.
+</Note>
+
+## What you'll learn
+
+By the end of this guide, you'll understand how to:
+
+- Create a cross-chain order using the deBridge API
+- Handle ERC-20 token approvals
+- Submit bridge transactions and track them on block explorers
+- Parse order estimations for fees and expected output
+
+## Run your first swap
+
+<Steps>
+  <Step title="Navigate to the project directory">
+    Open your terminal and navigate to the cloned repository:
+    
+    ```bash
+    cd api-integrator-example
+    ```
+  </Step>
+  
+  <Step title="Run the example script">
+    Execute the basic swap example using `npx tsx`:
+    
+    ```bash
+    npx tsx ./src/scripts/orders/example-swap.ts
+    ```
+    
+    You'll see output similar to:
+    
+    ```bash
+    Loading environment variables...
+    
+    Connecting to Polygon at https://polygon-mainnet.g.alchemy.com/v2/...
+    Connecting to Arbitrum at https://arb-mainnet.g.alchemy.com/v2/...
+    Polygon connected: matic (chainId=137)
+    Arbitrum connected: arbitrum (chainId=42161)
+    
+    Signer address: 0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb
+    
+    Creating deBridge order with input:
+    {
+      "srcChainId": "137",
+      "srcChainTokenIn": "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359",
+      "srcChainTokenInAmount": "100000",
+      "dstChainId": "42161",
+      "dstChainTokenOut": "0xaf88d065e77c8cc2239327c5edb3a432268e5831",
+      "dstChainTokenOutRecipient": "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb",
+      ...
+    }
+    
+    Order estimation: {
+      srcChainTokenIn: { amount: '100000', decimals: 6, symbol: 'USDC' },
+      dstChainTokenOut: { amount: '99750', decimals: 6, symbol: 'USDC' },
+      fees: { srcChainTokenIn: '250', dstChainTokenOut: '0' }
+    }
+    
+    Checking or setting token approval...
+    Current allowance: 0 USDC
+    Allowance insufficient—sending approval...
+    Approval tx hash: 0xabc123...
+    Waiting for confirmation on Polygonscan: https://polygonscan.com/tx/0xabc123...
+    Approval successful! ✅
+    
+    Submitting bridge transaction...
+    Bridge tx hash: 0xdef456...
+    Explorer: https://polygonscan.com/tx/0xdef456...
+    Waiting for confirmation...
+    Bridge transaction mined.
+    Status: ✅ Success
+    Block: 12345678 | Gas used: 234567
+    
+    Script execution complete.
+    ```
+  </Step>
+  
+  <Step title="Monitor your transaction">
+    The script outputs Polygonscan links for both transactions:
+    
+    1. **Approval transaction**: Allows deBridge to spend your USDC
+    2. **Bridge transaction**: Initiates the cross-chain transfer
+    
+    Click the links to view transaction details on Polygonscan.
+  </Step>
+  
+  <Step title="Track order fulfillment">
+    Cross-chain transfers take 1-10 minutes depending on network conditions. Track your order on the [deBridge Explorer](https://app.debridge.finance/orders) using your wallet address or transaction hash.
+  </Step>
+</Steps>
+
+<Warning>
+  **This script uses real funds on mainnet!** The example transfers 0.1 USDC. Make sure you have:
+  - At least 0.15 USDC on Polygon (0.1 for the transfer + buffer for fees)
+  - MATIC for gas fees (~0.01 MATIC is sufficient)
+</Warning>
+
+## Understanding the code
+
+Let's break down what the `example-swap.ts` script does:
+
+### 1. Load configuration and connect to providers
+
+```typescript
+import 'dotenv/config';
+import { ethers, Wallet, Contract } from 'ethers';
+
+// Load environment variables
+const { privateKey, polygonRpcUrl, arbRpcUrl } = getEnvConfig();
+
+// Connect to blockchain providers
+const polygonProvider = new JsonRpcProvider(polygonRpcUrl);
+const arbitrumProvider = new JsonRpcProvider(arbRpcUrl);
+
+// Initialize wallet
+const wallet = new Wallet(privateKey);
+const signer = wallet.connect(polygonProvider);
+```
+
+This loads your private key and RPC URLs from `.env`, then creates provider connections and a wallet signer.
+
+### 2. Construct the order parameters
+
+```typescript
+import { USDC } from '../../utils/tokens';
+import { CHAIN_IDS } from '../../utils/chains';
+
+const orderInput: deBridgeOrderInput = {
+  srcChainId: CHAIN_IDS.Polygon.toString(),              // Source: Polygon (137)
+  srcChainTokenIn: USDC.POLYGON,                         // Token: USDC
+  srcChainTokenInAmount: "100000",                       // Amount: 0.1 USDC (6 decimals)
+  dstChainId: CHAIN_IDS.Arbitrum.toString(),            // Destination: Arbitrum (42161)
+  dstChainTokenOut: USDC.ARBITRUM,                      // Output: USDC
+  dstChainTokenOutRecipient: senderAddress,             // Recipient: Your wallet
+  account: senderAddress,                               // Sender: Your wallet
+  srcChainOrderAuthorityAddress: wallet.address,        // Authority: Your wallet
+  dstChainOrderAuthorityAddress: wallet.address         // Dest authority: Your wallet
+};
+```
+
+<Note>
+  Token amounts must be in **atomic units** (smallest denomination). USDC has 6 decimals, so 0.1 USDC = 100,000 atomic units. Use `ethers.parseUnits("0.1", 6)` to convert.
+</Note>
+
+### 3. Create the order via deBridge API
+
+```typescript
+const order = await createDebridgeBridgeOrder(orderInput);
+
+console.log("Order estimation:", order.estimation);
+// {
+//   srcChainTokenIn: { amount: '100000', decimals: 6, symbol: 'USDC' },
+//   dstChainTokenOut: { amount: '99750', decimals: 6, symbol: 'USDC' },
+//   fees: { srcChainTokenIn: '250', dstChainTokenOut: '0' }
+// }
+```
+
+The `createDebridgeBridgeOrder` function calls:
+```
+GET https://dln.debridge.finance/v1.0/dln/order/create-tx
+```
+
+It returns:
+- `tx`: Transaction object ready to submit
+- `estimation`: Expected input/output amounts and fees
+
+### 4. Approve token spending
+
+Before deBridge can transfer your USDC, you must approve the spending:
+
+```typescript
+import { erc20Abi } from '../../constants';
+
+const tokenContract = new Contract(
+  USDC.POLYGON,
+  erc20Abi,
+  signer
+);
+
+// Check current allowance
+const currentAllowance = await tokenContract.allowance(
+  senderAddress,
+  order.tx.to  // deBridge contract address
+);
+
+if (currentAllowance < requiredAmount) {
+  // Send approval transaction
+  const approveTx = await tokenContract.approve(
+    order.tx.to,
+    requiredAmount
+  );
+  
+  await approveTx.wait();  // Wait for confirmation
+  console.log("Approval successful! ✅");
+}
+```
+
+The script includes an ERC-20 ABI with the essential functions:
+```typescript
+export const erc20Abi = [
+  "function balanceOf(address owner) view returns (uint256)",
+  "function decimals() view returns (uint8)",
+  "function symbol() view returns (string)",
+  "function allowance(address owner, address spender) view returns (uint256)",
+  "function approve(address spender, uint256 amount) returns (bool)",
+];
+```
+
+### 5. Submit the bridge transaction
+
+Once approved, submit the bridge transaction:
+
+```typescript
+const txResponse = await signer.sendTransaction(order.tx);
+
+console.log(`Bridge tx hash: ${txResponse.hash}`);
+console.log(`Explorer: https://polygonscan.com/tx/${txResponse.hash}`);
+
+// Wait for confirmation
+const txReceipt = await txResponse.wait();
+
+if (txReceipt.status === 1) {
+  console.log("Bridge transaction mined. ✅");
+}
+```
+
+## Order parameters explained
+
+Here are the key parameters you'll use in every deBridge order:
+
+| Parameter | Type | Description | Example |
+|-----------|------|-------------|----------|
+| `srcChainId` | string | Source chain ID | `"137"` (Polygon) |
+| `srcChainTokenIn` | string | Input token address | `"0x3c499c542cEF5E..."` (USDC) |
+| `srcChainTokenInAmount` | string | Input amount in atomic units | `"100000"` (0.1 USDC) |
+| `dstChainId` | string | Destination chain ID | `"42161"` (Arbitrum) |
+| `dstChainTokenOut` | string | Output token address | `"0xaf88d065e77c8c..."` (USDC) |
+| `dstChainTokenOutRecipient` | string | Recipient address | `"0x742d35Cc663..."` |
+| `account` | string | Sender address | `"0x742d35Cc663..."` |
+| `srcChainOrderAuthorityAddress` | string | Who can cancel the order | `"0x742d35Cc663..."` |
 
 <AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
+  <Accordion title="Optional parameters">
+    ```typescript
+    {
+      dstChainTokenOutAmount: "auto",           // Expected output (auto = best rate)
+      slippage: 0.5,                            // Slippage tolerance in %
+      referralCode: 31805,                      // Referral code (default included)
+      affiliateFeePercent: 10,                  // Affiliate fee in basis points (10 = 0.1%)
+      affiliateFeeRecipient: "0x...",           // Address to receive affiliate fees
+      prependOperatingExpenses: true,           // Include operating expenses in input
+    }
+    ```
   </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
+  
+  <Accordion title="Authority addresses">
+    - **srcChainOrderAuthorityAddress**: Who can cancel the order on source chain
+    - **dstChainOrderAuthorityAddress**: Who can claim stuck funds on destination
     
-    <Tip>Your preview updates automatically as you edit files.</Tip>
+    Usually set both to your wallet address for safety.
+  </Accordion>
+  
+  <Accordion title="Understanding fees">
+    The `estimation` object shows all fees:
+    
+    ```typescript
+    fees: {
+      srcChainTokenIn: '250',        // Fee in source token (0.0025 USDC)
+      dstChainTokenOut: '0'          // Fee in destination token
+    }
+    ```
+    
+    Fees cover:
+    - deBridge protocol fee
+    - Market maker rewards
+    - Operating expenses (gas on destination)
   </Accordion>
 </AccordionGroup>
 
-### Step 2: Deploy your changes
+## Customize the example
+
+Modify the script to try different scenarios:
+
+<CodeGroup>
+```typescript Change amount
+// Swap 5 USDC instead of 0.1
+const amountToSend = "5";
+const amountInAtomicUnit = ethers.parseUnits(amountToSend, 6);
+```
+
+```typescript Change chains
+// Swap from BNB Chain to Polygon
+const orderInput = {
+  srcChainId: CHAIN_IDS.BNB.toString(),
+  srcChainTokenIn: USDC.BNB,
+  // ...
+  dstChainId: CHAIN_IDS.Polygon.toString(),
+  dstChainTokenOut: USDC.POLYGON,
+  // ...
+};
+```
+
+```typescript Swap different tokens
+// Swap USDC to native ETH on Arbitrum
+import { EVM_NATIVE_TOKEN } from '../../utils/tokens';
+
+const orderInput = {
+  // ...
+  dstChainTokenOut: EVM_NATIVE_TOKEN.address,  // 0x000...000 = native token
+  // ...
+};
+```
+
+```typescript Add affiliate fee
+// Earn 0.1% on every swap
+const orderInput = {
+  // ... other params
+  affiliateFeePercent: 10,                    // 10 basis points = 0.1%
+  affiliateFeeRecipient: senderAddress,       // Your address receives fees
+};
+```
+</CodeGroup>
+
+## Common issues
 
 <AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
+  <Accordion title="Error: insufficient funds for intrinsic transaction cost">
+    You don't have enough MATIC for gas fees. Get at least 0.01 MATIC from an exchange:
+    - [Buy on Polygon Bridge](https://portal.polygon.technology/)
+    - Transfer from Coinbase/Binance
+  </Accordion>
+  
+  <Accordion title="Error: ERC20: transfer amount exceeds balance">
+    You don't have enough USDC on Polygon. Check your balance:
+    ```bash
+    # The script will show your balance in the approval section
+    ```
     
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
-
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
-
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
+    Get USDC by:
+    - Bridging from another chain
+    - Swapping MATIC for USDC on a DEX
+  </Accordion>
+  
+  <Accordion title="Error: Source and destination chains must differ">
+    You can't swap on the same chain using the cross-chain API. For same-chain swaps, see `/src/scripts/same-chain/` examples.
+  </Accordion>
+  
+  <Accordion title="Transaction takes a long time">
+    Cross-chain transfers typically complete in 1-10 minutes but can take longer during:
+    - High network congestion
+    - Low liquidity periods
+    - Source or destination chain issues
+    
+    Track your order at [app.debridge.finance/orders](https://app.debridge.finance/orders)
+  </Accordion>
+  
+  <Accordion title="How to get testnet tokens?">
+    These examples run on **mainnet only**. deBridge's liquidity network operates on production chains. Use minimal amounts for testing:
+    - Start with 0.1 USDC transfers
+    - Keep $5-10 in tokens for multiple tests
   </Accordion>
 </AccordionGroup>
-
-### Step 3: Go live
-
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
 
 ## Next steps
 
-Now that you have your docs running, explore these key features:
-
 <CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
+  <Card title="Explore more examples" icon="code" href="#">
+    Browse 20+ examples including Solana, TRON, hooks, and affiliate programs
+  </Card>
+  
+  <Card title="Query order status" icon="magnifying-glass" href="#">
+    Learn how to track and manage orders programmatically
+  </Card>
+  
+  <Card title="Add hooks" icon="webhook" href="#">
+    Execute custom logic after transfers, like supplying to Aave
+  </Card>
+  
+  <Card title="API reference" icon="book" href="https://docs.debridge.com/api-reference">
+    Explore the complete deBridge API documentation
+  </Card>
 </CardGroup>
 
-<Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
-</Note>
+## Additional resources
+
+- [View example-swap.ts source code](https://github.com/debridge-finance/api-integrator-example/blob/main/src/scripts/orders/example-swap.ts)
+- [deBridge Explorer - Track Orders](https://app.debridge.finance/orders)
+- [Supported Chains & Tokens](https://docs.debridge.com/dln-details/overview/fees-supported-chains)
+- [Understanding DLN Architecture](https://docs.debridge.com/dln-details/overview)

@@ -1,0 +1,173 @@
+---
+title: API Endpoints
+description: Reference for deBridge API endpoints used in the integrator examples
+---
+
+## Base API URL
+
+All deBridge API requests use the following base URL:
+
+```typescript
+DEBRIDGE_API = "https://dln.debridge.finance/v1.0"
+```
+
+<Note>
+This is the official API endpoint. Do not use alternative URLs.
+</Note>
+
+## Core Endpoints
+
+### Create Bridge Order
+
+Create a cross-chain bridge order for token transfers.
+
+<ParamField path="endpoint" type="string">
+  `GET /dln/order/create-tx`
+</ParamField>
+
+<ParamField query="srcChainId" type="string" required>
+  Source chain ID (e.g., '1' for Ethereum)
+</ParamField>
+
+<ParamField query="srcChainTokenIn" type="string" required>
+  Token address on source chain
+</ParamField>
+
+<ParamField query="srcChainTokenInAmount" type="string" required>
+  Amount to bridge in token's smallest unit (wei, satoshi, etc.)
+</ParamField>
+
+<ParamField query="dstChainId" type="string" required>
+  Destination chain ID
+</ParamField>
+
+<ParamField query="dstChainTokenOut" type="string" required>
+  Token address on destination chain
+</ParamField>
+
+<ParamField query="dstChainTokenOutRecipient" type="string" required>
+  Recipient address on destination chain
+</ParamField>
+
+<ParamField query="dstChainTokenOutAmount" type="string">
+  Expected output amount. Use "auto" for automatic calculation
+</ParamField>
+
+<ParamField query="senderAddress" type="string" required>
+  Sender's wallet address
+</ParamField>
+
+<ParamField query="srcChainOrderAuthorityAddress" type="string">
+  Authority address for the order on source chain. Falls back to sender's address
+</ParamField>
+
+<ParamField query="srcChainRefundAddress" type="string">
+  Address to receive refunds on source chain. Typically the sender's address
+</ParamField>
+
+<ParamField query="dstChainOrderAuthorityAddress" type="string">
+  Authority address for the order on destination chain. Falls back to recipient's address
+</ParamField>
+
+<ParamField query="referralCode" type="string">
+  Referral code for the transaction
+</ParamField>
+
+<ParamField query="prependOperatingExpenses" type="boolean">
+  Whether to prepend operating expenses. Recommended to set to `true`
+</ParamField>
+
+<ParamField query="affiliateFeePercent" type="string">
+  Affiliate fee percentage (e.g., "0.5" for 0.5%). Must be set with `affiliateFeeRecipient`
+</ParamField>
+
+<ParamField query="affiliateFeeRecipient" type="string">
+  Address to receive affiliate fees. Must be set with `affiliateFeePercent`
+</ParamField>
+
+<ParamField query="dlnHook" type="string">
+  JSON-stringified hook object for executing actions on the destination chain
+</ParamField>
+
+<ResponseField name="tx" type="object">
+  Transaction data ready to be signed and sent
+  
+  <ResponseField name="data" type="string">
+    Transaction calldata
+  </ResponseField>
+  
+  <ResponseField name="to" type="string">
+    Target contract address
+  </ResponseField>
+  
+  <ResponseField name="value" type="string">
+    Transaction value in wei
+  </ResponseField>
+</ResponseField>
+
+<ResponseField name="orderId" type="string">
+  Unique identifier for the bridge order
+</ResponseField>
+
+<ResponseField name="estimation" type="object">
+  Estimated amounts and fees for the order
+</ResponseField>
+
+## Stats API Endpoints
+
+The Stats API is used for tracking order status and retrieving order information.
+
+### Get Order ID by Transaction Hash
+
+Retrieve the order ID associated with a transaction hash.
+
+<ParamField path="endpoint" type="string">
+  `GET https://stats-api.dln.trade/api/Transaction/{txHash}/orderIds`
+</ParamField>
+
+<ParamField path="txHash" type="string" required>
+  Transaction hash from the source chain
+</ParamField>
+
+<ResponseField name="orderIds" type="array">
+  Array of order IDs associated with the transaction
+</ResponseField>
+
+### Get Order Status by Order ID
+
+Retrieve the current status and details of a bridge order.
+
+<ParamField path="endpoint" type="string">
+  `GET https://stats-api.dln.trade/api/Orders/{orderId}`
+</ParamField>
+
+<ParamField path="orderId" type="string" required>
+  Unique order identifier
+</ParamField>
+
+<ResponseField name="status" type="string">
+  Current status of the order (e.g., "Created", "Fulfilled", "ClaimedUnlock")
+</ResponseField>
+
+<ResponseField name="srcChainTx" type="object">
+  Source chain transaction details
+</ResponseField>
+
+<ResponseField name="dstChainTx" type="object">
+  Destination chain transaction details (if fulfilled)
+</ResponseField>
+
+<ResponseField name="amount" type="object">
+  Amount details including input and output amounts
+</ResponseField>
+
+## Additional Resources
+
+<CardGroup cols={2}>
+  <Card title="Supported Chains" icon="link" href="/reference/supported-chains">
+    View all supported chain IDs
+  </Card>
+  <Card title="Utility Functions" icon="code" href="/reference/utility-functions">
+    Helper functions for API integration
+  </Card>
+</CardGroup>

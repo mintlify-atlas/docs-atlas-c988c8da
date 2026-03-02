@@ -1,0 +1,127 @@
+---
+title: "Affiliate Operations Overview"
+description: "Learn how to earn fees by integrating deBridge affiliate functionality into your cross-chain orders"
+---
+
+## Introduction
+
+The deBridge DLN API allows you to earn affiliate fees on cross-chain bridge orders by including your affiliate parameters in order creation. When you create an order with affiliate fee settings, you receive a percentage of the transaction fees as commission.
+
+## How Affiliate Fees Work
+
+When you create a bridge order with affiliate fee parameters, the deBridge protocol:
+
+1. Collects the affiliate fee percentage from the transaction
+2. Credits it to your specified affiliate fee recipient address on the source chain
+3. Holds the fee in an escrow state until the order is fulfilled
+4. Makes the fee available for withdrawal once the order reaches `ClaimedUnlock` state
+
+## Key Parameters
+
+To earn affiliate fees on your orders, you need to include these parameters:
+
+### affiliateFeePercent
+
+<ParamField path="affiliateFeePercent" type="number" required>
+  The percentage of the transaction fee you'll receive as an affiliate. Expressed as a whole number (e.g., `10` for 10%).
+  
+  **Note:** Both `affiliateFeePercent` and `affiliateFeeRecipient` must be set together. If either is missing or set to 0, neither will be applied.
+</ParamField>
+
+### affiliateFeeRecipient
+
+<ParamField path="affiliateFeeRecipient" type="string" required>
+  The wallet address that will receive the affiliate fees. This address receives fees on the **source chain**.
+  
+  Must be a valid address format for the source chain (EVM address for EVM chains, Solana address for Solana).
+</ParamField>
+
+### referralCode
+
+<ParamField path="referralCode" type="number" optional>
+  An optional numeric identifier to track orders associated with your integration. Use this to query and monitor your affiliate orders.
+  
+  You can later filter orders by this code using the deBridge Stats API.
+</ParamField>
+
+## Affiliate Fee Lifecycle
+
+<Steps>
+  <Step title="Create Order with Affiliate Parameters">
+    Include `affiliateFeePercent`, `affiliateFeeRecipient`, and optionally `referralCode` when creating your bridge order.
+  </Step>
+  
+  <Step title="Order Execution">
+    The order is created on-chain and the affiliate fee is reserved in the order's escrow wallet.
+  </Step>
+  
+  <Step title="Order Fulfillment">
+    Once the order is fulfilled and reaches `ClaimedUnlock` state, your affiliate fees become available for withdrawal.
+  </Step>
+  
+  <Step title="Batch Withdrawal">
+    Query for your unlocked orders and withdraw all accumulated affiliate fees in a single batch transaction.
+  </Step>
+</Steps>
+
+## Querying Your Affiliate Orders
+
+You can query orders by referral code or affiliate recipient address using the deBridge Stats API:
+
+```typescript
+const response = await fetch('https://stats-api.dln.trade/api/Orders/filteredList', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    referralCode: 30830,
+    orderStates: ['Fulfilled', 'SentUnlock', 'ClaimedUnlock'],
+    skip: 0,
+    take: 100
+  })
+});
+
+const data = await response.json();
+console.log(`Found ${data.orders.length} orders`);
+```
+
+## Withdrawing Affiliate Fees
+
+Affiliate fees accumulate in order escrow wallets on the source chain. To claim your fees:
+
+1. Query for orders in `ClaimedUnlock` state with your affiliate address
+2. Build withdrawal instructions for each order
+3. Execute a batch withdrawal transaction
+
+See the [Batch Withdraw](/examples/affiliates/batch-withdraw) guide for detailed implementation.
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Use a consistent referral code">
+    Choose a unique referral code for your integration and use it consistently across all orders. This makes tracking and analytics much easier.
+  </Accordion>
+  
+  <Accordion title="Set reasonable fee percentages">
+    While you can technically set high affiliate fees, consider your users' experience. A typical affiliate fee is between 0.1% and 2% of the transaction.
+  </Accordion>
+  
+  <Accordion title="Batch your withdrawals">
+    Instead of withdrawing fees after each order, accumulate fees from multiple orders and withdraw them in batches to save on gas costs.
+  </Accordion>
+  
+  <Accordion title="Monitor order states">
+    Keep track of your orders' states. Fees are only withdrawable once orders reach `ClaimedUnlock` state.
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Create Order with Affiliate Fees" icon="coin" href="/examples/affiliates/basic-order">
+    Learn how to create a bridge order with affiliate fee parameters
+  </Card>
+  
+  <Card title="Batch Withdraw Fees" icon="wallet" href="/examples/affiliates/batch-withdraw">
+    Implement batch withdrawal to claim your accumulated affiliate fees
+  </Card>
+</CardGroup>

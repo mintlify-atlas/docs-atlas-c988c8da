@@ -1,0 +1,121 @@
+---
+title: Hooks Overview
+description: Execute custom logic on the destination chain after your cross-chain transfer completes
+---
+
+Hooks allow you to execute custom logic on the destination chain immediately after your cross-chain transfer completes. This enables you to build complex workflows like bridging tokens and automatically supplying them to DeFi protocols in a single transaction.
+
+## What Are Hooks?
+
+A hook is a transaction that executes on the destination chain after the deBridge protocol fulfills your order. You configure hooks by adding the `dlnHook` parameter to your order creation request.
+
+### Use Cases
+
+You can use hooks to:
+
+- Supply bridged tokens to lending protocols (Aave, Compound)
+- Stake tokens in protocols immediately after bridging
+- Execute swaps on the destination chain
+- Call custom smart contract functions
+- Automate multi-step DeFi workflows
+
+## Hook Structure
+
+The `dlnHook` parameter follows this structure:
+
+```typescript
+dlnHook: {
+  type: 'evm_transaction_call',
+  data: {
+    to: string,        // Target contract address
+    calldata: string,  // Encoded function call
+    gas: number        // Gas limit (0 for auto)
+  }
+}
+```
+
+### Parameters
+
+<ParamField path="type" type="string" required>
+  The hook type. Currently supports `evm_transaction_call` for EVM destination chains.
+</ParamField>
+
+<ParamField path="data.to" type="string" required>
+  The address of the smart contract to call on the destination chain.
+</ParamField>
+
+<ParamField path="data.calldata" type="string" required>
+  The ABI-encoded function call data. Generate this using ethers.js `Interface.encodeFunctionData()`.
+</ParamField>
+
+<ParamField path="data.gas" type="number" required>
+  Gas limit for the hook execution. Set to `0` to let the protocol estimate automatically.
+</ParamField>
+
+## How Hooks Work
+
+1. You create a bridge order with a `dlnHook` parameter
+2. Your order gets filled by a taker on the destination chain
+3. The taker delivers tokens to your specified recipient
+4. The hook transaction executes immediately after delivery
+5. Your tokens interact with the target protocol automatically
+
+<Note>
+The hook executes in the same transaction as the token delivery, ensuring atomicity of your cross-chain workflow.
+</Note>
+
+## Generating Calldata
+
+You need to generate the `calldata` parameter using the target contract's ABI. Here's a basic example:
+
+```typescript
+import { ethers, Interface } from "ethers";
+
+// Define the ABI for the function you want to call
+const abi = new Interface([
+  "function supply(address asset, uint256 amount, address onBehalfOf, uint16 referralCode)"
+]);
+
+// Encode the function call with parameters
+const calldata = abi.encodeFunctionData("supply", [
+  assetAddress,      // Token address
+  amount,            // Amount in atomic units
+  recipientAddress,  // Address to credit
+  0                  // Referral code
+]);
+```
+
+## Examples
+
+Explore complete implementations:
+
+<CardGroup cols={2}>
+  <Card title="EVM to EVM Hooks" icon="link" href="/examples/hooks/evm-to-evm">
+    Bridge from Arbitrum to Polygon and supply to Aave
+  </Card>
+  <Card title="Solana to EVM Hooks" icon="link" href="/examples/hooks/solana-to-evm">
+    Bridge from Solana to Polygon with automatic protocol interaction
+  </Card>
+</CardGroup>
+
+## Important Considerations
+
+<Warning>
+Ensure your hook contract has sufficient token allowance if it needs to move tokens. The bridged tokens are delivered to your `dstChainTokenOutRecipient` address first.
+</Warning>
+
+### Token Flow
+
+When using hooks, the token flow is:
+
+1. Tokens arrive at `dstChainTokenOutRecipient`
+2. Hook executes with the specified calldata
+3. Your hook logic can interact with those tokens
+
+Make sure your recipient address is either:
+- Your wallet (which can authorize token movements)
+- A smart contract designed to handle the hook interaction
+
+### Gas Limits
+
+Setting `gas: 0` lets deBridge estimate the gas automatically. For complex interactions, you may need to specify a higher limit explicitly.

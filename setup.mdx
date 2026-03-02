@@ -1,0 +1,257 @@
+---
+title: Environment setup
+description: Install dependencies and configure your development environment for deBridge API integration
+---
+
+## Prerequisites
+
+Before you begin, ensure you have the following installed:
+
+<Steps>
+  <Step title="Node.js 18 or higher">
+    This project requires Node.js v18 or higher. The recommended version is specified in `.nvmrc`:
+    
+    ```bash
+    v20.19.6
+    ```
+    
+    Check your Node.js version:
+    ```bash
+    node --version
+    ```
+    
+    If you're using [nvm](https://github.com/nvm-sh/nvm), switch to the correct version:
+    ```bash
+    nvm use
+    ```
+    
+    Otherwise, download Node.js from [nodejs.org](https://nodejs.org/)
+  </Step>
+  
+  <Step title="Package manager">
+    This project uses npm, which comes bundled with Node.js. Verify your installation:
+    ```bash
+    npm --version
+    ```
+  </Step>
+  
+  <Step title="RPC provider accounts">
+    You'll need RPC endpoints for the chains you want to interact with. We recommend [Alchemy](https://www.alchemy.com/) or [Infura](https://www.infura.io/).
+    
+    Sign up and create API keys for:
+    - Polygon
+    - Arbitrum
+    - BNB Chain
+    - Solana
+    
+    <Note>
+      Free tier RPC endpoints are sufficient for testing. You can add more chains later as needed.
+    </Note>
+  </Step>
+  
+  <Step title="Private keys with funds">
+    You'll need private keys with small amounts of tokens for testing:
+    - **EVM chains**: Private key in hex format (`0x...`) with gas tokens (MATIC, ETH, BNB)
+    - **Solana**: Private key in base58 format with SOL for gas
+    - **Test tokens**: Small amounts of USDC/USDT on source chains
+    
+    <Warning>
+      **Never use production private keys!** Create new wallets specifically for testing. These examples execute real transactions on mainnet.
+    </Warning>
+  </Step>
+</Steps>
+
+## Installation
+
+<Steps>
+  <Step title="Clone the repository">
+    Clone the deBridge API Integrator Examples repository:
+    
+    ```bash
+    git clone https://github.com/debridge-finance/api-integrator-example.git
+    cd api-integrator-example
+    ```
+  </Step>
+  
+  <Step title="Install dependencies">
+    Install all required npm packages:
+    
+    ```bash
+    npm install
+    ```
+    
+    This will install:
+    - `ethers` - Ethereum library for EVM chains
+    - `@solana/web3.js` - Solana web3 library
+    - `@debridge-finance/dln-client` - Official deBridge client
+    - `tronweb` - TRON blockchain library
+    - `dotenv` - Environment variable management
+    - `typescript` - TypeScript compiler
+  </Step>
+  
+  <Step title="Configure environment variables">
+    Create a `.env` file in the project root by copying the example:
+    
+    ```bash
+    cp .env.example .env
+    ```
+    
+    Open `.env` and configure your credentials:
+    
+    ```bash .env
+    # EVM private key (hex format with 0x prefix)
+    SIGNER_PK="0x1234567890abcdef..."
+    
+    # Solana private key (base58 format)
+    SOL_PK="your-base58-private-key"
+    
+    # RPC endpoints - replace <api_key> with your actual keys
+    POLYGON_RPC_URL="https://polygon-mainnet.g.alchemy.com/v2/<api_key>"
+    ARB_RPC_URL="https://arb-mainnet.g.alchemy.com/v2/<api_key>"
+    BNB_RPC_URL="https://bnb-mainnet.g.alchemy.com/v2/<api_key>"
+    SOL_RPC_URL="https://solana-mainnet.g.alchemy.com/v2/<api_key>"
+    
+    # TRON configuration (optional)
+    TRON_RPC_URL="https://api.trongrid.io"
+    TRON_PK="your-tron-private-key"
+    TRONGRID_API_KEY="your-trongrid-api-key"
+    
+    # MegaETH (optional, for specific examples)
+    MEGA_ETH_RPC_URL="https://your-megaeth-rpc-url"
+    ```
+    
+    <Warning>
+      The `.env` file is git-ignored to prevent accidentally committing secrets. Never commit your private keys to version control.
+    </Warning>
+  </Step>
+</Steps>
+
+## Environment variables reference
+
+Here's a complete breakdown of all environment variables:
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `SIGNER_PK` | Yes | EVM private key in hex format with `0x` prefix. Used for Ethereum, Polygon, Arbitrum, BNB, Base, etc. |
+| `SOL_PK` | For Solana | Solana private key in base58 format. Required for any Solana-related examples |
+| `POLYGON_RPC_URL` | For Polygon | Polygon mainnet RPC endpoint. Get from Alchemy, Infura, or other providers |
+| `ARB_RPC_URL` | For Arbitrum | Arbitrum One mainnet RPC endpoint |
+| `BNB_RPC_URL` | For BNB Chain | BNB Smart Chain mainnet RPC endpoint |
+| `SOL_RPC_URL` | For Solana | Solana mainnet RPC endpoint |
+| `TRON_RPC_URL` | For TRON | TRON mainnet RPC endpoint (usually `https://api.trongrid.io`) |
+| `TRON_PK` | For TRON | TRON private key |
+| `TRONGRID_API_KEY` | For TRON | TronGrid API key (optional but recommended for rate limits) |
+| `MEGA_ETH_RPC_URL` | For MegaETH | MegaETH RPC endpoint (only needed for MegaETH examples) |
+
+<Note>
+  You only need to configure RPC URLs for the chains you plan to use. Most examples use Polygon and Arbitrum, so start with those two at minimum.
+</Note>
+
+## Verify your setup
+
+Test that your environment is configured correctly:
+
+<CodeGroup>
+```bash Test Node.js version
+node --version
+# Should output v18+ (recommended: v20.19.6)
+```
+
+```bash Test TypeScript installation
+npx tsc --version
+# Should output: Version 5.8.3 (or similar)
+```
+
+```bash Verify dependencies
+npm list --depth=0
+# Should list all installed packages without errors
+```
+</CodeGroup>
+
+## Project structure
+
+Familiarize yourself with the key directories:
+
+```
+api-integrator-example/
+├── .env                    # Your environment variables (create this)
+├── .env.example            # Template for environment variables
+├── .nvmrc                  # Node version specification
+├── package.json            # Project dependencies
+├── tsconfig.json           # TypeScript configuration
+└── src/
+    ├── constants.ts        # Shared constants (ERC20 ABI, API endpoints)
+    ├── types/              # TypeScript type definitions
+    ├── utils/              # Utility functions
+    │   ├── chains.ts       # Chain ID constants
+    │   ├── tokens.ts       # Token addresses across chains
+    │   ├── deBridge/       # deBridge API wrapper functions
+    │   └── hooks/          # Hook generation utilities
+    └── scripts/            # Runnable example scripts
+        ├── orders/         # Basic cross-chain swaps
+        ├── hooks/          # Advanced hook examples
+        ├── affiliates/     # Affiliate program examples
+        └── same-chain/     # Same-chain operations
+```
+
+## Common issues
+
+<AccordionGroup>
+  <Accordion title="Error: Cannot find module 'dotenv'">
+    This means dependencies weren't installed correctly. Run:
+    ```bash
+    npm install
+    ```
+  </Accordion>
+  
+  <Accordion title="Error: SIGNER_PK not found in .env file">
+    You either didn't create a `.env` file or it's missing required variables. Copy `.env.example` to `.env` and fill in your credentials:
+    ```bash
+    cp .env.example .env
+    nano .env  # or use your preferred editor
+    ```
+  </Accordion>
+  
+  <Accordion title="Error: insufficient funds for gas">
+    Your wallet needs native tokens for gas fees:
+    - **Polygon**: Need MATIC
+    - **Arbitrum**: Need ETH
+    - **BNB Chain**: Need BNB
+    - **Solana**: Need SOL
+    
+    Get small amounts from exchanges or faucets.
+  </Accordion>
+  
+  <Accordion title="RPC connection errors">
+    If you see "Failed to initialize providers" or connection timeout errors:
+    - Verify your RPC URLs are correct
+    - Check that your API keys are active
+    - Ensure you haven't exceeded free tier rate limits
+    - Try using a different RPC provider as a fallback
+  </Accordion>
+  
+  <Accordion title="Node version mismatch">
+    If you see errors about unsupported Node features:
+    ```bash
+    # Using nvm:
+    nvm install 20.19.6
+    nvm use 20.19.6
+    
+    # Or download from nodejs.org
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next steps
+
+Now that your environment is set up, you're ready to run your first example:
+
+<Card title="Quick start guide" icon="rocket" href="/quickstart">
+  Execute your first cross-chain swap from Polygon to Arbitrum
+</Card>
+
+## Additional resources
+
+- [Node.js Installation Guide](https://nodejs.org/en/download/package-manager)
+- [Alchemy - Get RPC Endpoints](https://www.alchemy.com/)
+- [deBridge Supported Chains](https://docs.debridge.com/dln-details/overview/fees-supported-chains)

@@ -1,0 +1,286 @@
+---
+title: "Get Order ID from Transaction Hash"
+description: "Retrieve deBridge order IDs using transaction hashes"
+---
+
+## Overview
+
+After submitting a deBridge order transaction, you can retrieve the order ID using the transaction hash. This is essential for tracking orders and performing subsequent operations like querying status or cancelling.
+
+## Prerequisites
+
+- Node.js installed
+- A transaction hash from a deBridge order
+
+## API Endpoint
+
+```
+GET https://stats-api.dln.trade/api/Transaction/{txHash}/orderIds
+```
+
+### Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `txHash` | string | The transaction hash from the order creation |
+
+### Response
+
+The endpoint returns an object containing:
+
+```typescript
+{
+  orderIds: Array<{
+    stringValue: string;  // The order ID in hex format
+  }>
+}
+```
+
+<Note>
+  A single transaction can create multiple orders, so the response is always an array.
+</Note>
+
+## Implementation
+
+### Utility Function
+
+The example repository provides a utility function for retrieving order IDs:
+
+```typescript
+export async function getOrderIdByTransactionHash(txHash: string) {
+  const URL = `https://stats-api.dln.trade/api/Transaction/${txHash}/orderIds`;
+
+  const response = await fetch(URL);
+  
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(
+      `Failed to get orderId by transaction hash: ${response.statusText}. ${errorText}`,
+    );
+  }
+
+  const data = await response.json();
+
+  if (data.error) {
+    throw new Error(`DeBridge API Error: ${data.error}`);
+  }
+
+  return data;
+}
+```
+
+### Basic Example
+
+Here's a simple example that retrieves and logs the order IDs:
+
+```typescript
+import { getOrderIdByTransactionHash } from "./utils/deBridge"
+
+async function main() {
+  const txHash = "0x24c0dcc5de8b1ab048e10149c410ce59c1e1058d083ffdad6d8b6acb445618f1"
+
+  console.log(await getOrderIdByTransactionHash(txHash))
+}
+
+main()
+```
+
+**Source**: `src/scripts/orders/queries/get-order-id.ts`
+
+### Extracting the Order ID
+
+For most use cases, you'll want to extract the order ID string from the response:
+
+```typescript
+import { getOrderIdByTransactionHash } from "./utils/deBridge"
+
+async function main() {
+  const txHash = "0x924576a5af247945c3091e95f08c223a0a36c190527748fe209a8ecb6b0cb9c7"
+
+  const { orderIds } = await getOrderIdByTransactionHash(txHash)
+
+  if (orderIds && orderIds.length > 0) {
+    const orderId = orderIds[0].stringValue;
+    console.log(orderId)
+  }
+}
+
+main()
+```
+
+**Source**: `src/scripts/orders/queries/get-order-id-from-tx-hash.ts`
+
+## Running the Example
+
+<Steps>
+  <Step title="Navigate to the project">
+    ```bash
+    cd api-integrator-example
+    ```
+  </Step>
+  
+  <Step title="Update the transaction hash">
+    Open the script file and replace the `txHash` value with your transaction hash:
+    
+    ```typescript
+    const txHash = "0xYOUR_TRANSACTION_HASH_HERE"
+    ```
+  </Step>
+  
+  <Step title="Run the script">
+    For the basic example:
+    ```bash
+    npx tsx src/scripts/orders/queries/get-order-id.ts
+    ```
+    
+    Or for extracting the order ID:
+    ```bash
+    npx tsx src/scripts/orders/queries/get-order-id-from-tx-hash.ts
+    ```
+  </Step>
+</Steps>
+
+## Example Response
+
+### Full Response
+
+```json
+{
+  "orderIds": [
+    {
+      "stringValue": "0xa4d57d3156f9d5322542f344ba29fc4cd58d973e2ca8aa94c039ca8b05f869f5"
+    }
+  ]
+}
+```
+
+### Extracted Order ID
+
+```
+0xa4d57d3156f9d5322542f344ba29fc4cd58d973e2ca8aa94c039ca8b05f869f5
+```
+
+## Error Handling
+
+The utility function handles several error scenarios:
+
+<AccordionGroup>
+  <Accordion title="Transaction Not Found">
+    If the transaction hash doesn't exist or hasn't been indexed yet:
+    ```typescript
+    Error: Failed to get orderId by transaction hash: Not Found. Transaction not found
+    ```
+    
+    <Tip>
+      Wait a few moments after the transaction is mined before querying for the order ID.
+    </Tip>
+  </Accordion>
+  
+  <Accordion title="Invalid Transaction Hash">
+    If the transaction hash format is invalid:
+    ```typescript
+    Error: DeBridge API Error: Invalid transaction hash format
+    ```
+  </Accordion>
+  
+  <Accordion title="Network Error">
+    If the API request fails:
+    ```typescript
+    Error: fetch failed
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Multiple Orders
+
+A single transaction can create multiple orders. Handle this case appropriately:
+
+```typescript
+const { orderIds } = await getOrderIdByTransactionHash(txHash);
+
+if (orderIds.length === 0) {
+  console.log("No orders found for this transaction");
+} else if (orderIds.length === 1) {
+  console.log("Order ID:", orderIds[0].stringValue);
+} else {
+  console.log("Multiple orders found:");
+  orderIds.forEach((order, index) => {
+    console.log(`  Order ${index + 1}:`, order.stringValue);
+  });
+}
+```
+
+## Integration Example
+
+Here's how to use this in a complete order flow:
+
+```typescript
+import { getOrderIdByTransactionHash, getOrderStatusByOrderId } from "./utils/deBridge"
+
+async function trackOrder(txHash: string) {
+  // Step 1: Get the order ID from transaction hash
+  console.log("Retrieving order ID from transaction...");
+  const { orderIds } = await getOrderIdByTransactionHash(txHash);
+  
+  if (!orderIds || orderIds.length === 0) {
+    throw new Error("No order found for this transaction");
+  }
+  
+  const orderId = orderIds[0].stringValue;
+  console.log(`Order ID: ${orderId}`);
+  
+  // Step 2: Query the order status
+  console.log("Fetching order status...");
+  const status = await getOrderStatusByOrderId(orderId);
+  console.log(`Order State: ${status.orderState}`);
+  
+  return { orderId, status };
+}
+
+// Usage
+const txHash = "0x924576a5af247945c3091e95f08c223a0a36c190527748fe209a8ecb6b0cb9c7";
+trackOrder(txHash).then(result => {
+  console.log("Tracking complete:", result);
+});
+```
+
+## Finding Transaction Hashes
+
+You can find transaction hashes in several ways:
+
+<CardGroup cols={2}>
+  <Card title="After Order Creation" icon="code">
+    The transaction hash is returned when you submit a deBridge order:
+    ```typescript
+    const txResponse = await signer.sendTransaction(tx);
+    console.log(txResponse.hash);
+    ```
+  </Card>
+  
+  <Card title="Block Explorer" icon="globe">
+    Search for your wallet address on a block explorer:
+    - Ethereum: [Etherscan](https://etherscan.io)
+    - Polygon: [Polygonscan](https://polygonscan.com)
+    - Solana: [Solscan](https://solscan.io)
+  </Card>
+  
+  <Card title="deBridge Explorer" icon="bridge">
+    Visit the [deBridge Explorer](https://app.debridge.finance/orders) and search by address or transaction hash.
+  </Card>
+  
+  <Card title="Wallet History" icon="wallet">
+    Check your wallet's transaction history in MetaMask, Phantom, or other wallet applications.
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Query Status" icon="magnifying-glass" href="/examples/order-management/query-status">
+    Learn how to check order status using the order ID.
+  </Card>
+  
+  <Card title="Cancel Order" icon="xmark" href="/examples/order-management/cancel-order">
+    Understand how to cancel orders that are still pending.
+  </Card>
+</CardGroup>

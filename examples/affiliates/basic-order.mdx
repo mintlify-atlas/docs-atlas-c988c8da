@@ -1,0 +1,240 @@
+---
+title: "Creating Orders with Affiliate Fees"
+description: "Create cross-chain bridge orders with affiliate fee integration to earn commission on transactions"
+---
+
+## Overview
+
+You can earn affiliate fees on deBridge cross-chain orders by including affiliate parameters when creating orders. This guide shows you how to integrate affiliate fees into your bridge order creation.
+
+## Prerequisites
+
+Before you start, make sure you have:
+
+- A wallet with funds on the source chain
+- The source chain RPC provider configured
+- The deBridge SDK or API integration set up
+
+## Setting Up Affiliate Parameters
+
+To earn affiliate fees, you need to include three key parameters in your order input:
+
+```typescript
+const orderInput: deBridgeOrderInput = {
+  // Standard bridge parameters
+  srcChainId: CHAIN_IDS.Polygon.toString(),
+  srcChainTokenIn: USDC.POLYGON,
+  srcChainTokenInAmount: amountInAtomicUnit.toString(),
+  dstChainId: CHAIN_IDS.BNB.toString(),
+  dstChainTokenOut: USDC.BNB,
+  dstChainTokenOutRecipient: recipientAddress,
+  account: senderAddress,
+  srcChainOrderAuthorityAddress: wallet.address,
+  dstChainOrderAuthorityAddress: wallet.address,
+  
+  // Affiliate parameters
+  affiliateFeePercent: 10,  // 10% affiliate fee
+  affiliateFeeRecipient: affiliateFeeRecipient,  // Your fee recipient address
+  referralCode: 30830  // Optional: Your unique referral code
+};
+```
+
+<Note>
+  Both `affiliateFeePercent` and `affiliateFeeRecipient` must be set together. If either is 0 or missing, the affiliate fee will not be applied.
+</Note>
+
+## Complete Example
+
+Here's a complete example that creates a bridge order from Polygon to BNB Chain with affiliate fees:
+
+```typescript basic-order.ts
+import { ethers, Wallet, Contract, formatUnits } from "ethers";
+import { createDebridgeBridgeOrder } from '../../../utils/deBridge/createDeBridgeOrder';
+import { deBridgeOrderInput } from '../../../types';
+import { erc20Abi } from '../../../constants';
+import { getEnvConfig, getJsonRpcProviders } from '../../../utils';
+import { USDC } from '../../../utils/tokens';
+import { CHAIN_IDS } from '../../../utils/chains';
+
+async function main() {
+  const { privateKey } = getEnvConfig();
+  const { polygonProvider } = await getJsonRpcProviders();
+
+  // Wallet and Signer Setup
+  const wallet = new Wallet(privateKey);
+  const signer = wallet.connect(polygonProvider);
+  const senderAddress = await signer.getAddress();
+  
+  console.log(`Wallet Address: ${senderAddress}`);
+
+  // Prepare the bridge order with affiliate fees
+  const usdcDecimals = 6;
+  const amountToSend = "0.1"; // 0.1 USDC
+  const amountInAtomicUnit = ethers.parseUnits(amountToSend, usdcDecimals);
+
+  // Set your affiliate fee recipient (can be your own address)
+  const affiliateFeeRecipient = signer.address;
+
+  const orderInput: deBridgeOrderInput = {
+    srcChainId: CHAIN_IDS.Polygon.toString(),
+    srcChainTokenIn: USDC.POLYGON,
+    srcChainTokenInAmount: amountInAtomicUnit.toString(),
+    dstChainId: CHAIN_IDS.BNB.toString(),
+    dstChainTokenOut: USDC.BNB,
+    dstChainTokenOutRecipient: senderAddress,
+    account: senderAddress,
+    srcChainOrderAuthorityAddress: wallet.address,
+    dstChainOrderAuthorityAddress: wallet.address,
+    
+    // Affiliate fee configuration - 10% commission
+    affiliateFeePercent: 10,
+    affiliateFeeRecipient: affiliateFeeRecipient
+  };
+
+  console.log("Creating order with affiliate fees...");
+  const order = await createDebridgeBridgeOrder(orderInput);
+
+  if (!order || !order.tx || !order.tx.to || !order.tx.data) {
+    throw new Error("Invalid transaction request from API");
+  }
+
+  console.log("Order Estimation:", order.estimation);
+
+  // Approve token spending
+  const tokenContract = new Contract(orderInput.srcChainTokenIn, erc20Abi, signer);
+  const spenderAddress = order.tx.to;
+  const requiredAmount = BigInt(order.estimation.srcChainTokenIn.amount);
+
+  const currentAllowance = await tokenContract.allowance(senderAddress, spenderAddress);
+  
+  if (currentAllowance < requiredAmount) {
+    console.log("Approving token spending...");
+    const approveTx = await tokenContract.approve(spenderAddress, requiredAmount);
+    await approveTx.wait();
+    console.log("Approval confirmed");
+  }
+
+  // Send the bridge transaction
+  console.log("Sending bridge transaction...");
+  const txResponse = await signer.sendTransaction(order.tx);
+  
+  console.log(`Transaction Hash: ${txResponse.hash}`);
+  console.log(`View on Polygonscan: https://polygonscan.com/tx/${txResponse.hash}`);
+  
+  const txReceipt = await txResponse.wait();
+  
+  if (txReceipt && txReceipt.status === 1) {
+    console.log("Transaction successful! ✅");
+    console.log(`Affiliate fees will be available for withdrawal once the order is fulfilled.`);
+  }
+}
+
+main().catch(console.error);
+```
+
+## Understanding the Fee Structure
+
+When you set `affiliateFeePercent: 10`, you're requesting 10% of the transaction fees. Here's how it works:
+
+<Steps>
+  <Step title="Fee Calculation">
+    The affiliate fee is calculated as a percentage of the total bridge fee, not the transaction amount.
+  </Step>
+  
+  <Step title="Fee Collection">
+    The fee is deducted on the source chain and held in the order's escrow wallet.
+  </Step>
+  
+  <Step title="Fee Availability">
+    Once the order reaches `ClaimedUnlock` state, you can withdraw your accumulated fees.
+  </Step>
+</Steps>
+
+## Token Approval
+
+Before sending the bridge transaction, you need to approve the deBridge contract to spend your tokens:
+
+```typescript
+const tokenContract = new Contract(
+  orderInput.srcChainTokenIn, 
+  erc20Abi, 
+  signer
+);
+
+const spenderAddress = order.tx.to; // deBridge contract address
+const requiredAmount = BigInt(order.estimation.srcChainTokenIn.amount);
+
+// Check current allowance
+const currentAllowance = await tokenContract.allowance(
+  senderAddress, 
+  spenderAddress
+);
+
+// Approve if needed
+if (currentAllowance < requiredAmount) {
+  const approveTx = await tokenContract.approve(
+    spenderAddress, 
+    requiredAmount
+  );
+  await approveTx.wait();
+}
+```
+
+<Warning>
+  Always check the current allowance before approving. Unnecessary approval transactions waste gas and provide a poor user experience.
+</Warning>
+
+## Running the Script
+
+Make sure your environment is configured with the required variables:
+
+```bash .env
+PRIVATE_KEY=your_wallet_private_key
+POLYGON_RPC_URL=https://polygon-rpc.com
+```
+
+Then run the script:
+
+```bash
+ts-node src/scripts/orders/affiliate/basic-order.ts
+```
+
+## Tracking Your Orders
+
+After creating orders with affiliate fees, you can track them using the referral code:
+
+```typescript
+const response = await fetch('https://stats-api.dln.trade/api/Orders/filteredList', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    referralCode: 30830,
+    orderStates: ['Created', 'Fulfilled', 'ClaimedUnlock'],
+    skip: 0,
+    take: 100
+  })
+});
+
+const { orders } = await response.json();
+console.log(`Found ${orders.length} orders with your referral code`);
+```
+
+## Source Code Reference
+
+For the complete implementation, see:
+
+- Full example: `/home/daytona/workspace/source/src/scripts/orders/affiliate/basic-order.ts:20-152`
+- Order creation utility: `/home/daytona/workspace/source/src/utils/deBridge/createDeBridgeOrder.ts:17-73`
+- Type definitions: `/home/daytona/workspace/source/src/types/index.ts:58-83`
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Query Orders by Referral Code" icon="magnifying-glass" href="/examples/affiliates/overview">
+    Learn how to query and monitor your affiliate orders
+  </Card>
+  
+  <Card title="Withdraw Affiliate Fees" icon="wallet" href="/examples/affiliates/batch-withdraw">
+    Claim your accumulated affiliate fees using batch withdrawal
+  </Card>
+</CardGroup>

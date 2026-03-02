@@ -1,0 +1,407 @@
+---
+title: "Solana to EVM Transfers"
+description: "Bridge tokens from Solana to EVM chains like Polygon, Arbitrum, and Ethereum"
+---
+
+## Overview
+
+You can bridge tokens from Solana to any EVM-compatible chain. Unlike EVM-to-EVM transfers, Solana transactions use a different signing and submission process.
+
+## Complete Example: Solana to Polygon
+
+This example transfers 0.01 SOL from Solana to Polygon (as native MATIC).
+
+```typescript sol-to-poly.ts
+import 'dotenv/config';
+import {
+  ethers,
+  Wallet,
+  TransactionRequest
+} from "ethers";
+import { VersionedTransaction, Connection, Keypair } from "@solana/web3.js";
+import bs58 from 'bs58';
+import { createDebridgeBridgeOrder } from '../../utils/deBridge/createDeBridgeOrder';
+import { deBridgeOrderInput } from '../../types';
+import { getEnvConfig } from '../../utils';
+import { EVM_NATIVE_TOKEN, SOL } from '../../utils/tokens';
+import { prepareSolanaTransaction } from '../../utils/solana';
+import { CHAIN_IDS } from '../../utils/chains';
+
+async function main() {
+  const { privateKey, solPrivateKey, solRpcUrl } = getEnvConfig();
+
+  // Setup wallets
+  const wallet = new Wallet(privateKey);
+  const evmUserAddress = wallet.address;
+  const solWallet = Keypair.fromSecretKey(bs58.decode(solPrivateKey));
+
+  console.log(`SOL address (sender): ${solWallet.publicKey.toBase58()}`);
+  console.log(`EVM address (recipient): ${evmUserAddress}`);
+
+  // Prepare order parameters
+  const solDecimals = 9;
+  const amountToSend = "0.01";
+
+  // Affiliate fee parameters
+  const affiliateFeePercent = 0.1;
+  const affiliateFeeRecipient = "862oLANNqhdXyUCwLJPBqUHrScrqNR4yoGWGTxjZftKs";
+
+  const amountInAtomicUnit = ethers.parseUnits(amountToSend, solDecimals);
+
+  const orderInput: deBridgeOrderInput = {
+    srcChainId: CHAIN_IDS.Solana.toString(),
+    srcChainTokenIn: SOL.nativeSol,
+    srcChainTokenInAmount: amountInAtomicUnit.toString(),
+    dstChainId: CHAIN_IDS.Polygon.toString(),
+    dstChainTokenOut: EVM_NATIVE_TOKEN.address,
+    dstChainTokenOutRecipient: evmUserAddress,
+    account: solWallet.publicKey.toBase58(),
+    srcChainOrderAuthorityAddress: solWallet.publicKey.toBase58(),
+    dstChainOrderAuthorityAddress: evmUserAddress,
+    affiliateFeePercent,
+    affiliateFeeRecipient
+  };
+
+  console.log("Creating deBridge order...");
+  const order = await createDebridgeBridgeOrder(orderInput);
+
+  if (!order?.tx?.data) {
+    throw new Error("Invalid transaction request from createDebridgeBridgeOrder");
+  }
+
+  console.log("Order Estimation:", order.estimation);
+  const transactionRequest: TransactionRequest = order.tx;
+
+  const signedTx = await prepareSolanaTransaction(
+    solRpcUrl,
+    order.tx.data,
+    solWallet
+  );
+  const connection = new Connection(solRpcUrl, { commitment: "confirmed" });
+
+  // Send transaction on Solana
+  try {
+    console.log("Sending deBridge transaction on Solana...");
+    const raw = signedTx.serialize();
+    const signature = await connection.sendRawTransaction(raw, {
+      skipPreflight: false
+    });
+    
+    console.log(`Transaction sent! Signature: ${signature}`);
+    console.log(`View on Solscan: https://solscan.io/tx/${signature}`);
+  } catch (err) {
+    console.error("Error sending Solana transaction:", err);
+    process.exitCode = 1;
+  }
+}
+
+main().catch((error) => {
+  console.error("Fatal error:", error);
+  process.exitCode = 1;
+});
+```
+
+## Key Differences from EVM
+
+### Solana Wallet Setup
+
+Solana uses a different wallet structure:
+
+```typescript
+import { Keypair } from "@solana/web3.js";
+import bs58 from 'bs58';
+
+// Load Solana private key from environment
+const { solPrivateKey } = getEnvConfig();
+
+// Create keypair from base58 private key
+const solWallet = Keypair.fromSecretKey(bs58.decode(solPrivateKey));
+
+// Get public key as base58 string
+const solAddress = solWallet.publicKey.toBase58();
+console.log(`Solana address: ${solAddress}`);
+```
+
+### Transaction Signing
+
+Solana transactions require special preparation:
+
+```typescript
+import { prepareSolanaTransaction } from '../../utils/solana';
+import { Connection } from "@solana/web3.js";
+
+// Prepare and sign transaction
+const signedTx = await prepareSolanaTransaction(
+  solRpcUrl,
+  order.tx.data,
+  solWallet
+);
+
+// Submit to Solana network
+const connection = new Connection(solRpcUrl, { commitment: "confirmed" });
+const raw = signedTx.serialize();
+const signature = await connection.sendRawTransaction(raw, {
+  skipPreflight: false
+});
+```
+
+### No Token Approval
+
+<Info>
+  Solana transactions do not require separate token approval. Token spending authorization is included in the transaction.
+</Info>
+
+## Example: Solana USDC to Polygon
+
+```typescript sol-usdc-to-poly.ts
+import { USDC } from '../../utils/tokens';
+
+const orderInput: deBridgeOrderInput = {
+  srcChainId: CHAIN_IDS.Solana.toString(),
+  srcChainTokenIn: USDC.SOLANA,
+  srcChainTokenInAmount: ethers.parseUnits("0.2", 6).toString(),
+  dstChainId: CHAIN_IDS.Polygon.toString(),
+  dstChainTokenOut: USDC.POLYGON,
+  dstChainTokenOutRecipient: evmUserAddress,
+  account: solWallet.publicKey.toBase58(),
+  srcChainOrderAuthorityAddress: solWallet.publicKey.toBase58(),
+  dstChainOrderAuthorityAddress: evmUserAddress,
+};
+```
+
+## Environment Setup
+
+Your `.env` file needs both EVM and Solana credentials:
+
+```bash .env
+# EVM wallet private key (hex format)
+PRIVATE_KEY=0x...
+
+# Solana wallet private key (base58 format)
+SOL_PRIVATE_KEY=your_base58_private_key
+
+# Solana RPC URL
+SOL_RPC_URL=https://api.mainnet-beta.solana.com
+```
+
+## Native Token Transfers
+
+### SOL to Native EVM Tokens
+
+Bridge SOL to native tokens on EVM chains:
+
+```typescript
+import { EVM_NATIVE_TOKEN, SOL } from '../../utils/tokens';
+
+const orderInput: deBridgeOrderInput = {
+  srcChainId: CHAIN_IDS.Solana.toString(),
+  srcChainTokenIn: SOL.nativeSol, // Native SOL
+  srcChainTokenInAmount: ethers.parseUnits("0.01", 9).toString(),
+  dstChainId: CHAIN_IDS.Polygon.toString(),
+  dstChainTokenOut: EVM_NATIVE_TOKEN.address, // Native MATIC
+  dstChainTokenOutRecipient: evmAddress,
+  account: solWallet.publicKey.toBase58(),
+};
+```
+
+### Token Decimals
+
+<Note>
+  SOL uses 9 decimals, while most EVM tokens use 18 decimals for native tokens and 6 for USDC.
+</Note>
+
+```typescript
+// SOL: 9 decimals
+const solAmount = ethers.parseUnits("0.01", 9); // 10000000
+
+// USDC: 6 decimals (same on Solana and most EVM chains)
+const usdcAmount = ethers.parseUnits("5", 6); // 5000000
+```
+
+## Authority Addresses
+
+Set authority addresses correctly for cross-chain transfers:
+
+```typescript
+const orderInput: deBridgeOrderInput = {
+  srcChainId: CHAIN_IDS.Solana.toString(),
+  srcChainTokenIn: SOL.nativeSol,
+  srcChainTokenInAmount: amountInAtomicUnit.toString(),
+  dstChainId: CHAIN_IDS.Polygon.toString(),
+  dstChainTokenOut: EVM_NATIVE_TOKEN.address,
+  dstChainTokenOutRecipient: evmAddress,
+  account: solWallet.publicKey.toBase58(),
+  srcChainOrderAuthorityAddress: solWallet.publicKey.toBase58(), // Solana address
+  dstChainOrderAuthorityAddress: evmAddress, // EVM address
+};
+```
+
+## Affiliate Fees on Solana
+
+You can earn affiliate fees on Solana-to-EVM transfers:
+
+```typescript
+const orderInput: deBridgeOrderInput = {
+  // ... other parameters
+  affiliateFeePercent: 0.1, // 0.1% fee
+  affiliateFeeRecipient: "862oLANNqhdXyUCwLJPBqUHrScrqNR4yoGWGTxjZftKs", // Solana address
+};
+```
+
+<Info>
+  For Solana-to-EVM transfers, the affiliate fee recipient should be a Solana address. Fees are collected on Solana in the source token.
+</Info>
+
+## Transaction Response
+
+Solana transactions return a signature instead of a hash:
+
+```typescript
+const signature = await connection.sendRawTransaction(raw, {
+  skipPreflight: false
+});
+
+console.log(`Transaction signature: ${signature}`);
+console.log(`View on Solscan: https://solscan.io/tx/${signature}`);
+console.log(`View on SolanaFM: https://solana.fm/tx/${signature}`);
+```
+
+## Monitoring Solana Transactions
+
+Confirm transaction on Solana:
+
+```typescript
+import { Connection } from "@solana/web3.js";
+
+const connection = new Connection(solRpcUrl, { commitment: "confirmed" });
+const signature = await connection.sendRawTransaction(raw);
+
+// Wait for confirmation
+const confirmation = await connection.confirmTransaction(signature, "confirmed");
+
+if (confirmation.value.err) {
+  console.error("Transaction failed:", confirmation.value.err);
+} else {
+  console.log("Transaction confirmed successfully!");
+}
+```
+
+## Supported Destinations
+
+You can bridge from Solana to any EVM chain:
+
+| Destination Chain | Chain ID | Example Token |
+|-------------------|----------|---------------|
+| Ethereum | 1 | USDC, ETH |
+| Polygon | 137 | USDC, MATIC |
+| Arbitrum | 42161 | USDC, ETH |
+| BNB Chain | 56 | USDC, BNB |
+| Optimism | 10 | USDC, ETH |
+| Base | 8453 | USDC, ETH |
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Use correct Solana RPC endpoint">
+    Use a reliable Solana RPC endpoint:
+    
+    ```typescript
+    // Mainnet
+const solRpcUrl = "https://api.mainnet-beta.solana.com";
+    
+    // Or use a dedicated provider
+const solRpcUrl = "https://solana-mainnet.g.alchemy.com/v2/your-api-key";
+    ```
+  </Accordion>
+
+  <Accordion title="Handle Solana private keys securely">
+    Store Solana private keys in base58 format:
+    
+    ```bash .env
+    SOL_PRIVATE_KEY=your_base58_encoded_private_key
+    ```
+    
+    Never commit private keys to version control.
+  </Accordion>
+
+  <Accordion title="Check Solana balance before bridging">
+    Ensure sufficient SOL balance for transaction fees:
+    
+    ```typescript
+    const balance = await connection.getBalance(solWallet.publicKey);
+    console.log(`SOL balance: ${balance / 1e9} SOL`);
+    
+    if (balance < 0.01 * 1e9) {
+      throw new Error("Insufficient SOL for transaction fees");
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Set commitment level appropriately">
+    Use appropriate commitment levels:
+    
+    ```typescript
+    // For fast confirmations
+    const connection = new Connection(solRpcUrl, { commitment: "confirmed" });
+    
+    // For maximum security
+    const connection = new Connection(solRpcUrl, { commitment: "finalized" });
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Troubleshooting
+
+<Warning>
+  Solana transactions have different error formats than EVM transactions.
+</Warning>
+
+### Common Issues
+
+**Insufficient SOL balance**: Ensure you have enough SOL for fees:
+
+```typescript
+const balance = await connection.getBalance(solWallet.publicKey);
+if (balance < 0.01 * 1e9) {
+  throw new Error(`Insufficient SOL. Balance: ${balance / 1e9} SOL`);
+}
+```
+
+**Invalid private key format**: Ensure private key is base58-encoded:
+
+```typescript
+import bs58 from 'bs58';
+
+try {
+  const keypair = Keypair.fromSecretKey(bs58.decode(solPrivateKey));
+  console.log(`Loaded keypair: ${keypair.publicKey.toBase58()}`);
+} catch (error) {
+  console.error("Invalid Solana private key format");
+}
+```
+
+**Transaction simulation failed**: Check transaction with `skipPreflight: true`:
+
+```typescript
+const signature = await connection.sendRawTransaction(raw, {
+  skipPreflight: true, // Skip simulation
+  maxRetries: 3,
+});
+```
+
+**RPC connection issues**: Verify RPC URL is accessible:
+
+```typescript
+try {
+  const version = await connection.getVersion();
+  console.log(`Connected to Solana version: ${version['solana-core']}`);
+} catch (error) {
+  console.error("Failed to connect to Solana RPC:", error);
+}
+```
+
+## Next Steps
+
+- Learn about [EVM to Solana transfers](/examples/cross-chain/evm-to-solana)
+- Explore [Tron to Solana transfers](/examples/cross-chain/tron-to-solana)
+- See [order status tracking](/examples/order-management/query-status)

@@ -1,0 +1,462 @@
+---
+title: Utility Functions
+description: Helper functions for working with deBridge API and blockchain operations
+---
+
+## Order Tracking
+
+### getOrderIdByTransactionHash
+
+Retrieve the order ID associated with a transaction hash.
+
+```typescript
+getOrderIdByTransactionHash(txHash: string): Promise<any>
+```
+
+<ParamField path="txHash" type="string" required>
+  Transaction hash from the source chain
+</ParamField>
+
+<ResponseField name="return" type="Promise<any>">
+  Returns order IDs associated with the transaction
+</ResponseField>
+
+**Location:** `src/utils/deBridge/index.ts:1`
+
+**Example:**
+```typescript
+const orderIds = await getOrderIdByTransactionHash(
+  "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+);
+console.log("Order IDs:", orderIds);
+```
+
+### getOrderStatusByOrderId
+
+Retrieve the current status and details of a bridge order.
+
+```typescript
+getOrderStatusByOrderId(orderId: string): Promise<any>
+```
+
+<ParamField path="orderId" type="string" required>
+  Unique order identifier
+</ParamField>
+
+<ResponseField name="return" type="Promise<any>">
+  Returns complete order status including source and destination transaction details
+</ResponseField>
+
+**Location:** `src/utils/deBridge/index.ts:22`
+
+**Example:**
+```typescript
+const status = await getOrderStatusByOrderId("order-123");
+console.log("Order status:", status.status);
+console.log("Source chain tx:", status.srcChainTx);
+```
+
+## Order Creation
+
+### createDebridgeBridgeOrder
+
+Create a bridge order for cross-chain token transfer.
+
+```typescript
+createDebridgeBridgeOrder(params: deBridgeOrderInput): Promise<deBridgeOrderResponse>
+```
+
+<ParamField path="params" type="deBridgeOrderInput" required>
+  Bridge order parameters object
+  
+  <ParamField path="srcChainId" type="string" required>
+    Source chain ID
+  </ParamField>
+  
+  <ParamField path="srcChainTokenIn" type="string" required>
+    Token address on source chain
+  </ParamField>
+  
+  <ParamField path="srcChainTokenInAmount" type="string" required>
+    Amount to bridge in token's smallest unit
+  </ParamField>
+  
+  <ParamField path="dstChainId" type="string" required>
+    Destination chain ID (must differ from source)
+  </ParamField>
+  
+  <ParamField path="dstChainTokenOut" type="string" required>
+    Token address on destination chain
+  </ParamField>
+  
+  <ParamField path="dstChainTokenOutRecipient" type="string" required>
+    Recipient address on destination chain
+  </ParamField>
+  
+  <ParamField path="account" type="string" required>
+    Sender's wallet address
+  </ParamField>
+  
+  <ParamField path="dstChainTokenOutAmount" type="string">
+    Expected output amount (default: "auto")
+  </ParamField>
+  
+  <ParamField path="referralCode" type="number">
+    Referral code for the transaction
+  </ParamField>
+  
+  <ParamField path="affiliateFeePercent" type="number">
+    Affiliate fee percentage (must be used with affiliateFeeRecipient)
+  </ParamField>
+  
+  <ParamField path="affiliateFeeRecipient" type="string">
+    Address to receive affiliate fees
+  </ParamField>
+</ParamField>
+
+<ResponseField name="return" type="Promise<deBridgeOrderResponse>">
+  Returns bridge order details including transaction data
+</ResponseField>
+
+**Location:** `src/utils/deBridge/createDeBridgeOrder.ts:17`
+
+**Example:**
+```typescript
+const order = await createDebridgeBridgeOrder({
+  srcChainId: "1",
+  srcChainTokenIn: "0x...",
+  srcChainTokenInAmount: "1000000",
+  dstChainId: "137",
+  dstChainTokenOut: "0x...",
+  dstChainTokenOutRecipient: "0x...",
+  account: "0x..."
+});
+```
+
+### createDebridgeBridgeHook
+
+Create a bridge order with a hook for executing actions on the destination chain.
+
+```typescript
+createDebridgeBridgeHook(params: deBridgeHookInput): Promise<deBridgeOrderResponse>
+```
+
+<ParamField path="params" type="deBridgeHookInput" required>
+  Bridge order parameters with hook
+  
+  <ParamField path="dlnHook" type="object" required>
+    Hook object containing destination chain actions
+  </ParamField>
+  
+  All other parameters are the same as `createDebridgeBridgeOrder`
+</ParamField>
+
+**Location:** `src/utils/deBridge/createDeBridgeHook.ts:18`
+
+**Example:**
+```typescript
+const orderWithHook = await createDebridgeBridgeHook({
+  srcChainId: "1",
+  srcChainTokenIn: "0x...",
+  srcChainTokenInAmount: "1000000",
+  dstChainId: "137",
+  dstChainTokenOut: "0x...",
+  dstChainTokenOutRecipient: "0x...",
+  account: "0x...",
+  dlnHook: {
+    targetAddress: "0x...",
+    callData: "0x..."
+  }
+});
+```
+
+## HTTP Utilities
+
+### post
+
+Make a POST request to the deBridge API.
+
+```typescript
+post(URL: string, requestBody: object): Promise<any>
+```
+
+<ParamField path="URL" type="string" required>
+  API endpoint URL
+</ParamField>
+
+<ParamField path="requestBody" type="object" required>
+  Request body to send
+</ParamField>
+
+**Location:** `src/utils/http.ts:1`
+
+### get
+
+Make a GET request to the deBridge API.
+
+```typescript
+get(URL: string): Promise<any>
+```
+
+<ParamField path="URL" type="string" required>
+  API endpoint URL
+</ParamField>
+
+**Location:** `src/utils/http.ts:26`
+
+## Solana Utilities
+
+### prepareSolanaTransaction
+
+Prepare a Solana transaction with appropriate priority fees and blockhash.
+
+```typescript
+prepareSolanaTransaction(
+  solRpcUrl: string,
+  txData: string,
+  solWallet: Keypair
+): Promise<VersionedTransaction>
+```
+
+<ParamField path="solRpcUrl" type="string" required>
+  RPC URL of the Solana network
+</ParamField>
+
+<ParamField path="txData" type="string" required>
+  Serialized transaction data from the API
+</ParamField>
+
+<ParamField path="solWallet" type="Keypair" required>
+  Signer keypair
+</ParamField>
+
+<ResponseField name="return" type="Promise<VersionedTransaction>">
+  A signed Solana transaction ready for submission
+</ResponseField>
+
+**Location:** `src/utils/solana.ts:12`
+
+**Features:**
+- Simulates the transaction to calculate compute units
+- Fetches recent prioritization fees and sets a median priority fee
+- Updates blockhash and signs the transaction
+
+### updatePriorityFee
+
+Update the priority fee in a Solana transaction.
+
+```typescript
+updatePriorityFee(
+  tx: VersionedTransaction,
+  computeUnitPrice: number,
+  computeUnitLimit?: number
+): void
+```
+
+<ParamField path="tx" type="VersionedTransaction" required>
+  Transaction to update
+</ParamField>
+
+<ParamField path="computeUnitPrice" type="number" required>
+  Compute unit price in micro-lamports
+</ParamField>
+
+<ParamField path="computeUnitLimit" type="number">
+  Optional compute unit limit
+</ParamField>
+
+**Location:** `src/utils/index.ts:136`
+
+## TRON Utilities
+
+### initTronWeb
+
+Initialize a TronWeb client instance.
+
+```typescript
+initTronWeb(config: {
+  privateKey: string;
+  rpcUrl: string;
+  apiKey?: string;
+}): TronWeb
+```
+
+<ParamField path="config" type="object" required>
+  Configuration object
+  
+  <ParamField path="privateKey" type="string" required>
+    TRON private key
+  </ParamField>
+  
+  <ParamField path="rpcUrl" type="string" required>
+    TRON RPC URL
+  </ParamField>
+  
+  <ParamField path="apiKey" type="string">
+    TronGrid API key (optional)
+  </ParamField>
+</ParamField>
+
+**Location:** `src/utils/tron.ts:28`
+
+### toTronHex41
+
+Convert an address to TRON hex41 format.
+
+```typescript
+toTronHex41(tronWeb: TronWeb, address: string): string
+```
+
+<ParamField path="tronWeb" type="TronWeb" required>
+  TronWeb instance
+</ParamField>
+
+<ParamField path="address" type="string" required>
+  Address to convert (base58 or hex)
+</ParamField>
+
+**Location:** `src/utils/tron.ts:20`
+
+### simulateTriggerContract
+
+Simulate a TRON smart contract call.
+
+```typescript
+simulateTriggerContract(
+  tronWeb: TronWeb,
+  params: {
+    ownerAddress: string;
+    contractAddress: string;
+    callValue: number;
+    data: string;
+    label?: string;
+  }
+): Promise<{ ok: boolean; energyUsed?: number; error?: string }>
+```
+
+**Location:** `src/utils/tron.ts:52`
+
+### getTRC20Balance
+
+Get TRC20 token balance.
+
+```typescript
+getTRC20Balance(
+  tronWeb: TronWeb,
+  tokenAddress: string,
+  ownerAddress: string
+): Promise<number>
+```
+
+**Location:** `src/utils/tron.ts:142`
+
+### getTRC20Allowance
+
+Get TRC20 token allowance.
+
+```typescript
+getTRC20Allowance(
+  tronWeb: TronWeb,
+  tokenAddress: string,
+  ownerAddress: string,
+  spenderAddress: string
+): Promise<bigint>
+```
+
+**Location:** `src/utils/tron.ts:152`
+
+### checkTronTransactionReceipt
+
+Check if a TRON transaction broadcast was successful.
+
+```typescript
+checkTronTransactionReceipt(receipt: any): {
+  success: boolean;
+  error?: string;
+}
+```
+
+**Location:** `src/utils/tron.ts:113`
+
+## Environment & Provider Utilities
+
+### getEnvConfig
+
+Load and validate environment variables.
+
+```typescript
+getEnvConfig(): {
+  privateKey: string;
+  solPrivateKey: string;
+  polygonRpcUrl: string;
+  arbRpcUrl: string;
+  bnbRpcUrl: string;
+  baseRpcUrl: string;
+  solRpcUrl: string;
+  tronPrivateKey: string;
+  tronRpcUrl: string;
+  tronGridApiKey?: string;
+  megaEthRpcUrl?: string;
+}
+```
+
+**Location:** `src/utils/index.ts:62`
+
+### getJsonRpcProviders
+
+Create JSON-RPC providers for multiple EVM chains.
+
+```typescript
+getJsonRpcProviders(): Promise<{
+  polygonProvider: JsonRpcProvider;
+  arbitrumProvider: JsonRpcProvider;
+  bnbProvider: JsonRpcProvider;
+  baseProvider: JsonRpcProvider;
+  megaEthProvider: JsonRpcProvider;
+}>
+```
+
+**Location:** `src/utils/index.ts:5`
+
+## General Utilities
+
+### delay
+
+Delay execution for a specified number of milliseconds.
+
+```typescript
+delay(ms: number): Promise<void>
+```
+
+<ParamField path="ms" type="number" required>
+  Milliseconds to wait
+</ParamField>
+
+**Location:** `src/utils/index.ts:153`
+
+**Example:**
+```typescript
+console.log("Waiting...");
+await delay(3000);
+console.log("Done!");
+```
+
+### clipHexPrefix
+
+Remove "0x" prefix from a hex string if present.
+
+```typescript
+clipHexPrefix(hex: string): string
+```
+
+**Location:** `src/utils/tron.ts:4`
+
+### hexToUtf8
+
+Convert a hex string to UTF-8 (useful for error messages).
+
+```typescript
+hexToUtf8(hex?: string): string
+```
+
+**Location:** `src/utils/tron.ts:9`

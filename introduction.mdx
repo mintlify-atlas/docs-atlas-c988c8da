@@ -1,0 +1,164 @@
+---
+title: Introduction
+description: Learn how to integrate deBridge's cross-chain liquidity network with practical TypeScript examples
+---
+
+## Welcome to deBridge API Integrator Examples
+
+This collection provides hands-on examples for integrating deBridge's cross-chain liquidity network into your applications. Whether you're building a DEX aggregator, wallet, or DeFi protocol, these examples will help you implement cross-chain swaps, hooks, and affiliate programs.
+
+<Warning>
+  These examples will consume real funds on mainnet if not modified. The code is provided as-is without guarantees. We are not responsible for any damages incurred by running it.
+</Warning>
+
+## What is deBridge?
+
+deBridge is a cross-chain liquidity network that enables fast, secure transfers between 30+ blockchains including Ethereum, Polygon, Arbitrum, Solana, BNB Chain, and more. The deBridge Liquidity Network (DLN) allows you to:
+
+- Execute cross-chain token swaps with competitive rates
+- Attach custom logic via hooks for advanced use cases
+- Earn affiliate fees by integrating deBridge into your application
+- Query order status and transaction history
+
+## Key features
+
+<CardGroup cols={2}>
+  <Card title="Cross-chain orders" icon="arrows-turn-to-dots" href="/quickstart">
+    Swap tokens between 30+ chains with automatic routing and competitive pricing
+  </Card>
+  
+  <Card title="Smart hooks" icon="webhook" href="#">
+    Execute custom logic on the destination chain, like supplying to Aave or staking
+  </Card>
+  
+  <Card title="Affiliate program" icon="money-bill-trend-up" href="#">
+    Earn fees on every transaction by integrating deBridge into your platform
+  </Card>
+  
+  <Card title="Order management" icon="magnifying-glass-chart" href="#">
+    Track, query, and cancel orders with comprehensive status endpoints
+  </Card>
+</CardGroup>
+
+## Example categories
+
+This repository contains several categories of integration examples:
+
+### Orders
+
+The most common use case - basic cross-chain token swaps:
+
+- **EVM to EVM**: Polygon USDC → Arbitrum USDC
+- **EVM to Solana**: Base USDC → Solana USDC
+- **Solana to EVM**: Solana SOL → Polygon USDC
+- **TRON support**: TRON USDT → Solana USDC
+
+View all examples in `/src/scripts/orders/`
+
+### Hooks
+
+Advanced examples that execute custom logic after cross-chain transfers:
+
+- **EVM to EVM hooks**: Transfer USDC from Arbitrum to Polygon and automatically supply to Aave
+- **Solana to EVM hooks**: Bridge from Solana and execute custom contract calls
+
+View hook examples in `/src/scripts/hooks/`
+
+### Affiliates
+
+Examples for earning fees and managing affiliate rewards:
+
+- Create orders with affiliate fee percentages (10 basis points = 0.1%)
+- Batch withdraw accumulated fees from Solana
+- Query orders by referral code
+
+View affiliate examples in `/src/scripts/affiliates/` and `/src/scripts/orders/affiliate/`
+
+### Queries
+
+Utility scripts for tracking and managing orders:
+
+- Get order status by ID or transaction hash
+- List all orders for a specific address (paginated)
+- Query orders by referral code
+- Get HyperEVM funding sources
+
+View query examples in `/src/scripts/orders/queries/`
+
+## Supported chains
+
+The examples support 30+ chains with deBridge-specific chain IDs. Major chains include:
+
+<CodeGroup>
+```typescript EVM Chains
+const CHAIN_IDS = {
+  Ethereum: 1,
+  Polygon: 137,
+  Arbitrum: 42161,
+  BNB: 56,
+  Base: 8453,
+  Optimism: 10,
+  Avalanche: 43114,
+  // ... and 20+ more
+}
+```
+
+```typescript Non-EVM Chains
+const CHAIN_IDS = {
+  Solana: 7565164,
+  TRON: 100000026,
+}
+```
+</CodeGroup>
+
+<Note>
+  deBridge uses internal chain IDs which may differ from standard chain IDs for some chains. Always use the chain IDs from `/src/utils/chains.ts` or fetch them from the [supported chains API](https://docs.debridge.com/api-reference/utils/get-v10supported-chains-info).
+</Note>
+
+## Architecture overview
+
+The repository is organized for easy exploration and extension:
+
+```
+src/
+├── scripts/
+│   ├── orders/          # Basic cross-chain swap examples
+│   ├── hooks/           # Advanced hook integration examples
+│   ├── affiliates/      # Affiliate fee management
+│   └── same-chain/      # Same-chain estimations
+├── utils/
+│   ├── deBridge/        # Core deBridge API utilities
+│   ├── tokens.ts        # Token addresses across chains
+│   └── chains.ts        # Chain ID constants
+├── types/               # TypeScript type definitions
+└── constants.ts         # Shared constants (ABIs, API endpoints)
+```
+
+## Next steps
+
+<Steps>
+  <Step title="Set up your environment">
+    Configure Node.js, install dependencies, and set up environment variables
+    
+    [Go to setup guide →](/setup)
+  </Step>
+  
+  <Step title="Run your first example">
+    Execute a cross-chain swap from Polygon to Arbitrum in under 5 minutes
+    
+    [Go to quickstart →](/quickstart)
+  </Step>
+  
+  <Step title="Explore advanced examples">
+    Learn about hooks, affiliates, and order management
+    
+    [Browse all examples →](#)
+  </Step>
+</Steps>
+
+## Additional resources
+
+- [deBridge Documentation](https://docs.debridge.com)
+- [deBridge API Reference](https://docs.debridge.com/api-reference)
+- [Supported Chains & Fees](https://docs.debridge.com/dln-details/overview/fees-supported-chains)
+- [GitHub Repository](https://github.com/debridge-finance/api-integrator-example)

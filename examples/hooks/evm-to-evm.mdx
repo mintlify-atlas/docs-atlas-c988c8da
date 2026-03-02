@@ -1,0 +1,250 @@
+---
+title: EVM to EVM Hooks
+description: Bridge tokens between EVM chains and execute hooks on the destination chain
+---
+
+This example demonstrates how to bridge USDC from Arbitrum to Polygon and automatically supply it to Aave V3 using a hook.
+
+## Overview
+
+You'll learn how to:
+
+- Configure a hook to call Aave's supply function
+- Generate calldata for the Aave Pool contract
+- Create a bridge order with the `dlnHook` parameter
+- Handle token approvals and transaction execution
+
+## Complete Example
+
+This example bridges 2 USDC from Arbitrum to Polygon and supplies it to Aave V3 in a single cross-chain operation.
+
+### Generate Aave Calldata
+
+First, create the calldata for Aave's `supply()` function:
+
+```typescript /home/daytona/workspace/source/src/utils/hooks.ts
+import { ethers, Interface } from "ethers";
+import { USDC } from "./tokens";
+
+export async function generateAaveSupplyCalldata(senderAddress: string) {
+  const usdcDecimals = 6;
+
+  // Define arguments for the supply function
+  const assetAddress = USDC.POLYGON; // USDC on Polygon
+  const supplyAmount = ethers.parseUnits("1", usdcDecimals);
+  const onBehalfOfAddress = senderAddress;
+  const referralCode = 0;
+
+  const aavePoolAbi = new ethers.Interface([
+    "function supply(address asset, uint256 amount, address onBehalfOf, uint16 referralCode)"
+  ]);
+
+  // Create the calldata
+  const calldata = aavePoolAbi.encodeFunctionData("supply", [
+    assetAddress,
+    supplyAmount,
+    onBehalfOfAddress,
+    referralCode
+  ]);
+
+  console.log("Aave Pool Supply Calldata:", calldata);
+  return calldata;
+}
+```
+
+### Configure the Hook
+
+Set up your bridge order with the `dlnHook` parameter:
+
+```typescript /home/daytona/workspace/source/src/scripts/hooks/evm-evm/basic.ts
+import { ethers, Wallet } from "ethers";
+import { deBridgeHookInput } from '../../../types';
+import { createDebridgeBridgeHook } from '../../../utils/deBridge/createDeBridgeHook';
+import { USDC } from '../../../utils/tokens';
+import { generateAaveSupplyCalldata } from '../../../utils/hooks';
+import { CHAIN_IDS } from '../../../utils/chains';
+
+const usdcDecimals = 6;
+const amountToSend = "2"; // 2 USDC
+const aavePoolPolygonAddress = "0x794a61358D6845594F94dc1DB02A252b5b4814aD";
+
+const amountInAtomicUnit = ethers.parseUnits(amountToSend, usdcDecimals);
+const hookCalldata = await generateAaveSupplyCalldata(senderAddress);
+
+const hookInput: deBridgeHookInput = {
+  srcChainId: CHAIN_IDS.Arbitrum.toString(),
+  srcChainTokenIn: USDC.ARBITRUM,
+  srcChainTokenInAmount: amountInAtomicUnit.toString(),
+  dstChainId: CHAIN_IDS.Polygon.toString(),
+  dstChainTokenOut: USDC.POLYGON,
+  dstChainTokenOutRecipient: senderAddress,
+  account: senderAddress,
+  srcChainOrderAuthorityAddress: wallet.address,
+  dstChainOrderAuthorityAddress: wallet.address,
+  dlnHook: {
+    type: 'evm_transaction_call',
+    data: {
+      to: aavePoolPolygonAddress,
+      calldata: hookCalldata,
+      gas: 0
+    }
+  }
+};
+```
+
+### Create and Execute the Order
+
+Create the bridge order and execute the transaction:
+
+```typescript
+// Create the order
+const order = await createDebridgeBridgeHook(hookInput);
+
+if (!order?.tx?.to || !order?.tx?.data) {
+  throw new Error("Invalid transaction request");
+}
+
+console.log("Order Estimation:", order.estimation);
+```
+
+### Approve Token Spending
+
+Approve the deBridge contract to spend your USDC:
+
+```typescript
+const tokenContract = new Contract(
+  hookInput.srcChainTokenIn,
+  erc20Abi,
+  signer
+);
+
+const requiredAmount = BigInt(order.estimation.srcChainTokenIn.amount);
+const currentAllowance = await tokenContract.allowance(
+  senderAddress,
+  order.tx.to
+);
+
+if (currentAllowance < requiredAmount) {
+  console.log("Approving token spending...");
+  const approveTx = await tokenContract.approve(
+    order.tx.to,
+    requiredAmount
+  );
+  await approveTx.wait();
+  console.log("Approval confirmed");
+}
+```
+
+### Send the Transaction
+
+```typescript
+console.log("Sending bridge transaction...");
+const txResponse = await signer.sendTransaction(order.tx);
+
+console.log(`Transaction Hash: ${txResponse.hash}`);
+console.log(`View on Arbiscan: https://arbiscan.io/tx/${txResponse.hash}`);
+
+// Wait for confirmation
+const receipt = await txResponse.wait();
+
+if (receipt.status === 1) {
+  console.log("Transaction successful!");
+  console.log(`Block: ${receipt.blockNumber}`);
+  console.log(`Gas Used: ${receipt.gasUsed.toString()}`);
+}
+```
+
+## Hook Parameter Breakdown
+
+<ParamField path="dlnHook.type" type="string" required>
+  Set to `evm_transaction_call` for EVM destination chains.
+</ParamField>
+
+<ParamField path="dlnHook.data.to" type="string" required>
+  The Aave Pool contract address on Polygon: `0x794a61358D6845594F94dc1DB02A252b5b4814aD`
+</ParamField>
+
+<ParamField path="dlnHook.data.calldata" type="string" required>
+  ABI-encoded `supply()` function call generated by `generateAaveSupplyCalldata()`
+</ParamField>
+
+<ParamField path="dlnHook.data.gas" type="number" required>
+  Set to `0` for automatic gas estimation
+</ParamField>
+
+## How It Works
+
+1. You send USDC on Arbitrum to the deBridge contract
+2. A taker fills your order on Polygon
+3. USDC is delivered to your `dstChainTokenOutRecipient` address
+4. The hook calls Aave's `supply()` function
+5. Your USDC is supplied to Aave V3 on Polygon
+6. You receive aTokens representing your deposit
+
+<Note>
+The hook execution happens atomically with the token delivery, ensuring your funds are immediately put to work.
+</Note>
+
+## Token Approvals
+
+<Warning>
+You need to approve the Aave Pool to spend your USDC on Polygon before the hook can execute successfully. This approval should be done in advance or handled by your recipient contract.
+</Warning>
+
+### Pre-Approval Strategy
+
+For personal wallets, approve the Aave Pool contract before initiating the bridge:
+
+```typescript
+// On Polygon, approve Aave Pool to spend USDC
+const usdcPolygon = new Contract(USDC.POLYGON, erc20Abi, polygonSigner);
+const maxApproval = ethers.MaxUint256;
+
+await usdcPolygon.approve(aavePoolPolygonAddress, maxApproval);
+```
+
+## Running the Example
+
+```bash
+cd ~/workspace/source
+npm install
+cp .env.example .env
+# Add your private key and RPC URLs to .env
+npx tsx src/scripts/hooks/evm-evm/basic.ts
+```
+
+## Expected Output
+
+```
+Wallet Address (Signer): 0x...
+
+Creating deBridge order with input: {
+  "srcChainId": "42161",
+  "srcChainTokenIn": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+  "dstChainId": "137",
+  "dlnHook": {
+    "type": "evm_transaction_call",
+    "data": {
+      "to": "0x794a61358D6845594F94dc1DB02A252b5b4814aD",
+      "calldata": "0x...",
+      "gas": 0
+    }
+  }
+}
+
+Order Estimation: { ... }
+Transaction Hash: 0x...
+View on Arbiscan: https://arbiscan.io/tx/0x...
+Transaction successful!
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Solana to EVM Hooks" icon="link" href="/examples/hooks/solana-to-evm">
+    Learn how to use hooks from Solana to EVM chains
+  </Card>
+  <Card title="API Reference" icon="book" href="/api-reference/order/create">
+    View the complete order creation API
+  </Card>
+</CardGroup>

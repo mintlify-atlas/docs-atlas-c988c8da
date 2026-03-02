@@ -1,0 +1,321 @@
+---
+title: Solana to EVM Hooks
+description: Bridge tokens from Solana to EVM chains and execute hooks on the destination
+---
+
+This example demonstrates how to bridge USDC from Solana to Polygon and automatically supply it to Aave V3 using a hook.
+
+## Overview
+
+You'll learn how to:
+
+- Configure cross-chain hooks from Solana to EVM
+- Use `auto` for source chain token amounts
+- Handle Solana transaction signing
+- Execute hooks on EVM destination chains
+
+## Complete Example
+
+This example bridges USDC from Solana to Polygon with automatic Aave supply on the destination chain.
+
+### Setup Solana Wallet
+
+First, configure your Solana wallet and connection:
+
+```typescript /home/daytona/workspace/source/src/scripts/hooks/sol-evm/example.ts
+import { Connection, Keypair } from "@solana/web3.js";
+import { Wallet } from "ethers";
+import bs58 from 'bs58';
+import { getEnvConfig, getJsonRpcProviders } from '../../../utils';
+
+const { privateKey, solRpcUrl, solPrivateKey } = getEnvConfig();
+const { polygonProvider } = await getJsonRpcProviders();
+
+// Setup EVM wallet for destination chain
+const wallet = new Wallet(privateKey);
+const signerPolygon = wallet.connect(polygonProvider);
+const senderAddress = await signerPolygon.getAddress();
+
+// Setup Solana wallet
+const solWallet = Keypair.fromSecretKey(bs58.decode(solPrivateKey));
+const solanaAddress = solWallet.publicKey.toString();
+
+console.log(`EVM Address: ${senderAddress}`);
+console.log(`Solana Address: ${solanaAddress}`);
+```
+
+### Configure the Hook
+
+Set up your bridge order with the `dlnHook` parameter:
+
+```typescript
+import { deBridgeHookInput } from '../../../types';
+import { createDebridgeBridgeHook } from '../../../utils/deBridge/createDeBridgeHook';
+import { USDC } from '../../../utils/tokens';
+import { generateAaveSupplyCalldata } from '../../../utils/hooks';
+import { CHAIN_IDS } from '../../../utils/chains';
+
+const aavePoolPolygonAddress = "0x794a61358D6845594F94dc1DB02A252b5b4814aD";
+
+// Generate calldata for Aave supply
+const hookCalldata = await generateAaveSupplyCalldata(senderAddress);
+
+const hookInput: deBridgeHookInput = {
+  prependOperatingExpenses: true,
+  additionalTakerRewardBps: 0,
+  srcChainId: CHAIN_IDS.Solana.toString(),
+  srcChainTokenIn: USDC.SOLANA,
+  srcChainTokenInAmount: "auto",  // Auto-calculate source amount
+  dstChainId: CHAIN_IDS.Polygon.toString(),
+  dstChainTokenOut: USDC.POLYGON,
+  dstChainTokenOutAmount: "1000000",  // 1 USDC in atomic units
+  dstChainTokenOutRecipient: senderAddress,
+  account: solanaAddress,
+  srcChainOrderAuthorityAddress: solanaAddress,
+  dstChainOrderAuthorityAddress: senderAddress,
+  dlnHook: {
+    type: 'evm_transaction_call',
+    data: {
+      to: aavePoolPolygonAddress,
+      calldata: hookCalldata,
+      gas: 0
+    }
+  }
+};
+```
+
+### Create the Order
+
+Create the bridge order using the deBridge API:
+
+```typescript
+console.log("Creating deBridge order...");
+const order = await createDebridgeBridgeHook(hookInput);
+
+if (!order?.tx?.data) {
+  throw new Error("Invalid transaction request");
+}
+
+console.log("Order Estimation:", order.estimation);
+console.log("Source Amount:", order.estimation.srcChainTokenIn.amount);
+console.log("Destination Amount:", order.estimation.dstChainTokenOut.amount);
+```
+
+### Prepare and Send Solana Transaction
+
+Prepare the Solana transaction and broadcast it:
+
+```typescript
+import { prepareSolanaTransaction } from '../../../utils/solana';
+
+// Prepare the transaction
+const signedTx = await prepareSolanaTransaction(
+  solRpcUrl,
+  order.tx.data,
+  solWallet
+);
+
+// Create connection
+const connection = new Connection(solRpcUrl, { commitment: "confirmed" });
+
+// Send the transaction
+try {
+  console.log("Sending deBridge transaction on Solana...");
+  
+  const raw = signedTx.serialize();
+  const signature = await connection.sendRawTransaction(raw, {
+    skipPreflight: false
+  });
+  
+  console.log(`Transaction sent! Signature: ${signature}`);
+  console.log(`View on Solscan: https://solscan.io/tx/${signature}`);
+} catch (err) {
+  console.error("Error sending Solana transaction:", err);
+  throw err;
+}
+```
+
+## Key Differences from EVM to EVM
+
+### Auto Amount Calculation
+
+When bridging from Solana, you can use `"auto"` for `srcChainTokenInAmount`:
+
+```typescript
+srcChainTokenInAmount: "auto",
+dstChainTokenOutAmount: "1000000",  // Specify destination amount instead
+```
+
+This tells deBridge to automatically calculate how much USDC to take from Solana to deliver exactly 1 USDC on Polygon.
+
+### Operating Expenses
+
+<Info>
+Set `prependOperatingExpenses: true` when bridging from Solana to ensure transaction fees are properly handled.
+</Info>
+
+```typescript
+prependOperatingExpenses: true,
+```
+
+### Transaction Signing
+
+Solana transactions use a different signing flow:
+
+1. The API returns serialized transaction data in `order.tx.data`
+2. You use `prepareSolanaTransaction()` to deserialize and sign
+3. Broadcast using `connection.sendRawTransaction()`
+
+## Hook Configuration
+
+The hook configuration is identical to EVM-to-EVM:
+
+<ParamField path="dlnHook.type" type="string" required>
+  Set to `evm_transaction_call` for EVM destination chains.
+</ParamField>
+
+<ParamField path="dlnHook.data.to" type="string" required>
+  The Aave Pool contract address on Polygon: `0x794a61358D6845594F94dc1DB02A252b5b4814aD`
+</ParamField>
+
+<ParamField path="dlnHook.data.calldata" type="string" required>
+  ABI-encoded `supply()` function call for Aave V3
+</ParamField>
+
+<ParamField path="dlnHook.data.gas" type="number" required>
+  Set to `0` for automatic gas estimation
+</ParamField>
+
+## How It Works
+
+1. You send USDC on Solana to the deBridge program
+2. A taker fills your order on Polygon
+3. USDC is delivered to your EVM wallet address
+4. The hook calls Aave's `supply()` function on Polygon
+5. Your USDC is supplied to Aave V3
+6. You receive aTokens in your EVM wallet
+
+<Note>
+Even though the source chain is Solana, the hook executes on the EVM destination chain (Polygon) using standard Ethereum transaction calls.
+</Note>
+
+## Authority Addresses
+
+Note the different authority addresses for cross-chain operations:
+
+```typescript
+srcChainOrderAuthorityAddress: solanaAddress,  // Solana public key
+dstChainOrderAuthorityAddress: senderAddress,  // EVM address
+```
+
+The source authority must be a Solana address, while the destination authority is your EVM wallet.
+
+## Running the Example
+
+```bash
+cd ~/workspace/source
+npm install
+cp .env.example .env
+# Add your private keys and RPC URLs to .env:
+# - PRIVATE_KEY (EVM wallet)
+# - SOL_PRIVATE_KEY (Solana wallet, base58 encoded)
+# - SOL_RPC_URL (Solana RPC endpoint)
+
+npx tsx src/scripts/hooks/sol-evm/example.ts
+```
+
+## Expected Output
+
+```
+EVM Address: 0x...
+Solana Address: 862oLANNqhdXyUCwLJPBqUHrScrqNR4yoGWGTxjZftKs
+
+Creating deBridge order with input: {
+  "srcChainId": "7565164",
+  "srcChainTokenIn": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+  "srcChainTokenInAmount": "auto",
+  "dstChainId": "137",
+  "dstChainTokenOutAmount": "1000000",
+  "dlnHook": {
+    "type": "evm_transaction_call",
+    "data": {
+      "to": "0x794a61358D6845594F94dc1DB02A252b5b4814aD",
+      "calldata": "0x...",
+      "gas": 0
+    }
+  }
+}
+
+Order Estimation:
+Source Amount: 1005234
+Destination Amount: 1000000
+
+Sending deBridge transaction on Solana...
+Transaction sent! Signature: 5x...
+View on Solscan: https://solscan.io/tx/5x...
+```
+
+## Token Approvals on Destination
+
+<Warning>
+Just like EVM-to-EVM hooks, you must approve the Aave Pool contract to spend USDC on Polygon before the hook executes.
+</Warning>
+
+Since your destination recipient is an EVM address, approve the Aave Pool beforehand:
+
+```typescript
+// On Polygon, using your EVM wallet
+import { Contract, ethers } from "ethers";
+
+const usdcPolygon = new Contract(
+  USDC.POLYGON,
+  erc20Abi,
+  polygonSigner
+);
+
+const approveTx = await usdcPolygon.approve(
+  aavePoolPolygonAddress,
+  ethers.MaxUint256
+);
+
+await approveTx.wait();
+console.log("Aave Pool approved to spend USDC");
+```
+
+## Troubleshooting
+
+### Insufficient SOL Balance
+
+Ensure your Solana wallet has enough SOL to cover transaction fees:
+
+```bash
+solana balance <your-address>
+```
+
+### Invalid Signature
+
+Make sure your `SOL_PRIVATE_KEY` is base58 encoded:
+
+```typescript
+// Correct format
+const solWallet = Keypair.fromSecretKey(bs58.decode(solPrivateKey));
+```
+
+### Hook Execution Failed
+
+Verify that:
+
+1. The Aave Pool has USDC spending approval
+2. Your destination address is correct
+3. The calldata is properly encoded
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="EVM to EVM Hooks" icon="link" href="/examples/hooks/evm-to-evm">
+    Learn about hooks between EVM chains
+  </Card>
+  <Card title="Hooks Overview" icon="book" href="/examples/hooks/overview">
+    Understand how hooks work
+  </Card>
+</CardGroup>

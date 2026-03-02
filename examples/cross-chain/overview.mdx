@@ -1,0 +1,158 @@
+---
+title: "Cross-Chain Orders Overview"
+description: "Learn how to create cross-chain token transfers using deBridge's bridge orders"
+---
+
+## Introduction
+
+Cross-chain orders enable you to transfer tokens between different blockchains using deBridge's decentralized liquidity network. You can bridge tokens between EVM chains (Ethereum, Polygon, Arbitrum, BNB Chain), Solana, and Tron.
+
+## How It Works
+
+A cross-chain order involves:
+
+1. **Creating an order** - Call `createDebridgeBridgeOrder` with source and destination chain details
+2. **Approving tokens** - For EVM chains, approve the deBridge contract to spend your tokens
+3. **Submitting the transaction** - Send the transaction on the source chain
+4. **Receiving tokens** - Tokens arrive on the destination chain after fulfillment
+
+## Supported Routes
+
+You can create cross-chain orders between:
+
+<CardGroup cols={2}>
+  <Card title="EVM to EVM" icon="arrow-right-arrow-left" href="/examples/cross-chain/evm-to-evm">
+    Transfer tokens between Ethereum, Polygon, Arbitrum, BNB Chain, and other EVM chains
+  </Card>
+  
+  <Card title="EVM to Solana" icon="arrow-right" href="/examples/cross-chain/evm-to-solana">
+    Bridge tokens from EVM chains to Solana
+  </Card>
+  
+  <Card title="Solana to EVM" icon="arrow-left" href="/examples/cross-chain/solana-to-evm">
+    Bridge tokens from Solana to EVM chains
+  </Card>
+  
+  <Card title="Tron to Solana" icon="arrow-right" href="/examples/cross-chain/tron-to-solana">
+    Transfer tokens from Tron to Solana
+  </Card>
+</CardGroup>
+
+## Order Parameters
+
+All cross-chain orders require these core parameters:
+
+| Parameter | Description | Example |
+|-----------|-------------|----------|
+| `srcChainId` | Source chain ID | `'137'` (Polygon) |
+| `srcChainTokenIn` | Token address on source chain | `'0x...'` |
+| `srcChainTokenInAmount` | Amount in token's smallest unit | `'5000000'` (5 USDC) |
+| `dstChainId` | Destination chain ID | `'42161'` (Arbitrum) |
+| `dstChainTokenOut` | Token address on destination chain | `'0x...'` |
+| `dstChainTokenOutRecipient` | Recipient address | `'0x...'` or Solana address |
+| `account` | Sender's wallet address | `'0x...'` |
+
+## Optional Parameters
+
+You can customize orders with optional parameters:
+
+### Authority Addresses
+
+```typescript
+const orderInput = {
+  // ... required parameters
+  srcChainOrderAuthorityAddress: wallet.address,
+  dstChainOrderAuthorityAddress: recipientAddress,
+};
+```
+
+### Affiliate Fees
+
+Earn fees by adding affiliate parameters:
+
+```typescript
+const orderInput = {
+  // ... required parameters
+  affiliateFeePercent: 0.1, // 0.1% fee
+  affiliateFeeRecipient: wallet.address,
+};
+```
+
+### Referral Code
+
+```typescript
+const orderInput = {
+  // ... required parameters
+  referralCode: 31805,
+};
+```
+
+## Token Approval (EVM Chains)
+
+When bridging from EVM chains, you must approve the deBridge contract to spend your tokens:
+
+```typescript
+const tokenContract = new Contract(
+  orderInput.srcChainTokenIn,
+  erc20Abi,
+  signer
+);
+
+// Check current allowance
+const currentAllowance = await tokenContract.allowance(
+  senderAddress,
+  spenderAddress
+);
+
+// Approve if needed
+if (currentAllowance < requiredAmount) {
+  const approveTx = await tokenContract.approve(
+    spenderAddress,
+    requiredAmount
+  );
+  await approveTx.wait();
+}
+```
+
+## Error Handling
+
+Always implement proper error handling:
+
+```typescript
+try {
+  const order = await createDebridgeBridgeOrder(orderInput);
+  
+  if (!order?.tx?.to || !order?.tx?.data) {
+    throw new Error("Invalid order response");
+  }
+  
+  // Submit transaction
+  const txResponse = await signer.sendTransaction(order.tx);
+  await txResponse.wait();
+  
+} catch (error) {
+  console.error("Bridge order failed:", error);
+  process.exitCode = 1;
+}
+```
+
+## Order Estimation
+
+The order response includes estimation data:
+
+```typescript
+const order = await createDebridgeBridgeOrder(orderInput);
+
+console.log("Input amount:", order.estimation.srcChainTokenIn.amount);
+console.log("Output amount:", order.estimation.dstChainTokenOut.amount);
+console.log("Fees:", order.estimation.fees);
+```
+
+## Next Steps
+
+Explore specific cross-chain transfer examples:
+
+- [EVM to EVM transfers](/examples/cross-chain/evm-to-evm)
+- [EVM to Solana transfers](/examples/cross-chain/evm-to-solana)
+- [Solana to EVM transfers](/examples/cross-chain/solana-to-evm)
+- [Tron to Solana transfers](/examples/cross-chain/tron-to-solana)

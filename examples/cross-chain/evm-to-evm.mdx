@@ -1,0 +1,355 @@
+---
+title: "EVM to EVM Transfers"
+description: "Transfer tokens between EVM-compatible chains like Polygon, Arbitrum, BNB Chain, and Ethereum"
+---
+
+## Overview
+
+You can bridge tokens between any EVM-compatible chains supported by deBridge, including:
+
+- Ethereum
+- Polygon
+- Arbitrum
+- BNB Chain
+- Optimism
+- Base
+- Avalanche
+
+## Complete Example: Polygon to Arbitrum
+
+This example transfers 5 USDC from Polygon to Arbitrum.
+
+```typescript poly-arb-usdc-5.ts
+import 'dotenv/config';
+import {
+  ethers,
+  Wallet,
+  Contract,
+  formatUnits,
+  TransactionResponse,
+  TransactionReceipt,
+  TransactionRequest
+} from "ethers";
+import { createDebridgeBridgeOrder } from '../../utils/deBridge/createDeBridgeOrder';
+import { deBridgeOrderInput } from '../../types';
+import { erc20Abi } from '../../constants';
+import { getEnvConfig, getJsonRpcProviders } from '../../utils';
+import { USDC } from '../../utils/tokens';
+import { CHAIN_IDS } from '../../utils/chains';
+
+async function main() {
+  const { privateKey } = getEnvConfig();
+  const { polygonProvider } = await getJsonRpcProviders();
+
+  // Setup wallet and signer
+  const wallet = new Wallet(privateKey);
+  const signer = wallet.connect(polygonProvider);
+  const senderAddress = await signer.getAddress();
+  console.log(`Wallet Address: ${senderAddress}`);
+
+  // Prepare order parameters
+  const usdcDecimals = 6;
+  const amountToSend = "5";
+  const amountInAtomicUnit = ethers.parseUnits(amountToSend, usdcDecimals);
+
+  const orderInput: deBridgeOrderInput = {
+    srcChainId: CHAIN_IDS.Polygon.toString(),
+    srcChainTokenIn: USDC.POLYGON,
+    srcChainTokenInAmount: amountInAtomicUnit.toString(),
+    dstChainId: CHAIN_IDS.Arbitrum.toString(),
+    dstChainTokenOut: USDC.ARBITRUM,
+    dstChainTokenOutRecipient: senderAddress,
+    account: senderAddress,
+    srcChainOrderAuthorityAddress: wallet.address,
+    dstChainOrderAuthorityAddress: wallet.address,
+  };
+
+  console.log("Creating deBridge order...");
+  const order = await createDebridgeBridgeOrder(orderInput);
+
+  if (!order?.tx?.to || !order?.tx?.data) {
+    throw new Error("Invalid transaction request from createDebridgeBridgeOrder");
+  }
+
+  console.log("Order Estimation:", order.estimation);
+  const transactionRequest: TransactionRequest = order.tx;
+
+  // Approve token spending
+  const spenderAddress = transactionRequest.to;
+  if (!spenderAddress) {
+    throw new Error("Missing spender address");
+  }
+
+  console.log(`Checking token approval...`);
+  const tokenContract = new Contract(orderInput.srcChainTokenIn, erc20Abi, signer);
+  const requiredAmount = BigInt(order.estimation.srcChainTokenIn.amount);
+
+  try {
+    const currentAllowance: bigint = await tokenContract.allowance(
+      senderAddress,
+      spenderAddress
+    );
+    console.log(`Current allowance: ${formatUnits(currentAllowance, usdcDecimals)} USDC`);
+
+    if (currentAllowance < requiredAmount) {
+      console.log("Insufficient allowance. Approving...");
+      const approveTx: TransactionResponse = await tokenContract.approve(
+        spenderAddress,
+        requiredAmount
+      );
+
+      console.log(`Approve tx: ${approveTx.hash}`);
+      console.log(`View on Polygonscan: https://polygonscan.com/tx/${approveTx.hash}`);
+      
+      const approveTxReceipt: TransactionReceipt | null = await approveTx.wait();
+
+      if (approveTxReceipt?.status === 1) {
+        console.log("Approval successful!");
+      } else {
+        throw new Error(`Approval failed. Status: ${approveTxReceipt?.status}`);
+      }
+    } else {
+      console.log("Sufficient allowance already granted");
+    }
+  } catch (error) {
+    console.error("Error during token approval:", error);
+    throw new Error("Token approval failed");
+  }
+
+  // Send bridge transaction
+  try {
+    console.log("Sending bridge transaction...");
+    const txResponse: TransactionResponse = await signer.sendTransaction(transactionRequest);
+
+    console.log(`Transaction sent: ${txResponse.hash}`);
+    console.log(`View on Polygonscan: https://polygonscan.com/tx/${txResponse.hash}`);
+
+    const txReceipt: TransactionReceipt | null = await txResponse.wait();
+
+    if (txReceipt) {
+      console.log(`Status: ${txReceipt.status === 1 ? 'Success' : 'Failed'}`);
+      console.log(`Block: ${txReceipt.blockNumber}`);
+      console.log(`Gas used: ${txReceipt.gasUsed.toString()}`);
+    }
+  } catch (error) {
+    console.error("Error sending transaction:", error);
+    process.exitCode = 1;
+  }
+}
+
+main().catch((error) => {
+  console.error("Fatal error:", error);
+  process.exitCode = 1;
+});
+```
+
+## Example: Arbitrum to Polygon
+
+Reverse the chain IDs to bridge from Arbitrum to Polygon:
+
+```typescript arb-poly-usdc-5.ts
+const orderInput: deBridgeOrderInput = {
+  srcChainId: CHAIN_IDS.Arbitrum.toString(),
+  srcChainTokenIn: USDC.ARBITRUM,
+  srcChainTokenInAmount: amountInAtomicUnit.toString(),
+  dstChainId: CHAIN_IDS.Polygon.toString(),
+  dstChainTokenOut: USDC.POLYGON,
+  dstChainTokenOutRecipient: senderAddress,
+  account: senderAddress,
+  srcChainOrderAuthorityAddress: wallet.address,
+  dstChainOrderAuthorityAddress: wallet.address,
+};
+```
+
+## Example: BNB Chain to Arbitrum
+
+<Note>
+  BNB Chain USDC uses 18 decimals instead of the typical 6 decimals.
+</Note>
+
+```typescript bnb-usdc-to-arb.ts
+const { bnbProvider } = await getJsonRpcProviders();
+const signer = wallet.connect(bnbProvider);
+
+const usdcDecimals = 18; // BNB USDC has 18 decimals
+const amountToSend = "0.01";
+const amountInAtomicUnit = ethers.parseUnits(amountToSend, usdcDecimals);
+
+const orderInput: deBridgeOrderInput = {
+  srcChainId: CHAIN_IDS.BNB.toString(),
+  srcChainTokenIn: USDC.BNB,
+  srcChainTokenInAmount: amountInAtomicUnit.toString(),
+  dstChainTokenOutAmount: "auto",
+  dstChainId: CHAIN_IDS.Arbitrum.toString(),
+  dstChainTokenOut: USDC.ARBITRUM,
+  dstChainTokenOutRecipient: wallet.address,
+  account: wallet.address,
+  srcChainOrderAuthorityAddress: wallet.address,
+  dstChainOrderAuthorityAddress: wallet.address,
+  referralCode: 31805,
+};
+```
+
+## Key Concepts
+
+### Token Decimals
+
+Always use the correct decimal precision for each token:
+
+```typescript
+// Most USDC tokens use 6 decimals
+const polygonUSDC = ethers.parseUnits("5", 6); // 5000000
+
+// BNB Chain USDC uses 18 decimals
+const bnbUSDC = ethers.parseUnits("5", 18); // 5000000000000000000
+```
+
+### Approval Flow
+
+The approval process follows this pattern:
+
+1. Check current allowance
+2. Compare with required amount
+3. Approve if insufficient
+4. Wait for approval confirmation
+5. Proceed with bridge transaction
+
+```typescript
+const currentAllowance = await tokenContract.allowance(
+  senderAddress,
+  spenderAddress
+);
+
+if (currentAllowance < requiredAmount) {
+  const approveTx = await tokenContract.approve(
+    spenderAddress,
+    requiredAmount
+  );
+  await approveTx.wait();
+}
+```
+
+### Transaction Monitoring
+
+Monitor both approval and bridge transactions:
+
+```typescript
+const txReceipt = await txResponse.wait();
+
+if (txReceipt?.status === 1) {
+  console.log("Transaction successful!");
+  console.log(`Block: ${txReceipt.blockNumber}`);
+  console.log(`Gas used: ${txReceipt.gasUsed}`);
+} else {
+  console.error("Transaction failed");
+}
+```
+
+## Supported Chains
+
+| Chain | Chain ID | USDC Decimals | Explorer |
+|-------|----------|---------------|----------|
+| Ethereum | 1 | 6 | etherscan.io |
+| Polygon | 137 | 6 | polygonscan.com |
+| Arbitrum | 42161 | 6 | arbiscan.io |
+| BNB Chain | 56 | 18 | bscscan.com |
+| Optimism | 10 | 6 | optimistic.etherscan.io |
+| Base | 8453 | 6 | basescan.org |
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Always check allowance before approving">
+    Check the current allowance to avoid unnecessary approval transactions:
+    
+    ```typescript
+    const currentAllowance = await tokenContract.allowance(
+      senderAddress,
+      spenderAddress
+    );
+    
+    if (currentAllowance >= requiredAmount) {
+      console.log("Sufficient allowance already granted");
+      // Skip approval
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Use correct decimal precision">
+    Always verify the token's decimal precision:
+    
+    ```typescript
+    const decimals = await tokenContract.decimals();
+    const amount = ethers.parseUnits(amountString, decimals);
+    ```
+  </Accordion>
+
+  <Accordion title="Handle errors gracefully">
+    Implement comprehensive error handling:
+    
+    ```typescript
+    try {
+      const txReceipt = await txResponse.wait();
+      if (txReceipt?.status !== 1) {
+        throw new Error("Transaction failed");
+      }
+    } catch (error) {
+      console.error("Transaction error:", error);
+      process.exitCode = 1;
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Wait for confirmation">
+    Always wait for transaction confirmation before proceeding:
+    
+    ```typescript
+    // Wait for approval
+    await approveTx.wait();
+    
+    // Then submit bridge transaction
+    const txResponse = await signer.sendTransaction(order.tx);
+    await txResponse.wait();
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Troubleshooting
+
+<Warning>
+  If the approval transaction fails, do not proceed with the bridge transaction.
+</Warning>
+
+### Common Issues
+
+**Insufficient balance**: Ensure you have enough tokens and native gas tokens:
+
+```typescript
+const balance = await tokenContract.balanceOf(senderAddress);
+const nativeBalance = await provider.getBalance(senderAddress);
+
+console.log(`Token balance: ${formatUnits(balance, decimals)}`);
+console.log(`Native balance: ${formatUnits(nativeBalance, 18)}`);
+```
+
+**Wrong decimal precision**: Verify token decimals:
+
+```typescript
+const decimals = await tokenContract.decimals();
+console.log(`Token decimals: ${decimals}`);
+```
+
+**Gas estimation failure**: Increase gas limit manually:
+
+```typescript
+const txResponse = await signer.sendTransaction({
+  ...transactionRequest,
+  gasLimit: 500000,
+});
+```
+
+## Next Steps
+
+- Learn about [EVM to Solana transfers](/examples/cross-chain/evm-to-solana)
+- Explore [Solana to EVM transfers](/examples/cross-chain/solana-to-evm)
+- See [order status tracking](/examples/order-management/query-status)

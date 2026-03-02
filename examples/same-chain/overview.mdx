@@ -1,0 +1,82 @@
+---
+title: "Same-Chain Swaps Overview"
+description: "Learn how to swap tokens on the same blockchain using deBridge API"
+---
+
+## What are same-chain swaps?
+
+Same-chain swaps allow you to exchange tokens on a single blockchain without bridging to another chain. You can swap between any supported tokens on the same network, including native tokens and ERC-20 tokens.
+
+## Supported chains
+
+You can perform same-chain swaps on any blockchain supported by deBridge, including:
+
+- Ethereum and EVM-compatible chains (Polygon, Arbitrum, MegaETH, etc.)
+- Solana
+- Other supported networks
+
+## How it works
+
+The same-chain swap process follows these steps:
+
+1. **Get an estimation** - Call the estimation endpoint to preview swap details including expected output amount, fees, and slippage
+2. **Create the swap transaction** - Generate a transaction request with your swap parameters
+3. **Approve token spending** (if needed) - For ERC-20 tokens on EVM chains, approve the deBridge contract to spend your tokens
+4. **Execute the transaction** - Sign and send the transaction to complete the swap
+
+## Common use cases
+
+<CardGroup cols={2}>
+  <Card title="Stablecoin to native token" icon="coins">
+    Swap USDC to ETH, MATIC, or SOL to pay for gas fees
+  </Card>
+  
+  <Card title="Native token to stablecoin" icon="dollar-sign">
+    Convert ETH, MATIC, or SOL to USDC for stable value
+  </Card>
+  
+  <Card title="Token-to-token swaps" icon="arrow-right-arrow-left">
+    Exchange any supported tokens on the same chain
+  </Card>
+  
+  <Card title="Portfolio rebalancing" icon="chart-line">
+    Adjust your token holdings without cross-chain transactions
+  </Card>
+</CardGroup>
+
+## Key parameters
+
+When creating a same-chain swap, you'll need to specify:
+
+- **chainId** - The blockchain network ID (e.g., `137` for Polygon, `7565164` for Solana)
+- **tokenIn** - The token address you're swapping from
+- **tokenInAmount** - The amount to swap in the token's smallest unit (atomic units)
+- **tokenOut** - The token address you're swapping to
+- **tokenOutRecipient** - The address that will receive the output tokens
+- **senderAddress** - The address initiating the swap
+
+<Note>
+For native tokens on EVM chains, use `0x0000000000000000000000000000000000000000` as the token address.
+</Note>
+
+## Optional parameters
+
+You can customize your swap with these optional parameters:
+
+- **slippage** - Maximum acceptable slippage (default: `"auto"`)
+- **srcChainPriorityLevel** - Transaction priority: `"normal"` or `"aggressive"`
+- **referralCode** - Your referral code for tracking
+- **affiliateFeePercent** - Percentage fee for affiliates (requires `affiliateFeeRecipient`)
+- **affiliateFeeRecipient** - Address to receive affiliate fees
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Get estimations" icon="calculator" href="/examples/same-chain/estimation">
+    Preview swap details before executing
+  </Card>
+  
+  <Card title="Execute swaps" icon="code" href="/examples/same-chain/token-swaps">
+    See complete swap examples with code
+  </Card>
+</CardGroup>

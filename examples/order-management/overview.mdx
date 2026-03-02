@@ -1,0 +1,117 @@
+---
+title: "Order Management Overview"
+description: "Learn how to query, track, and manage deBridge orders using the DLN API"
+---
+
+## Introduction
+
+The deBridge order management system allows you to track and control your cross-chain orders throughout their lifecycle. You can query order status, retrieve order IDs from transaction hashes, and cancel orders when needed.
+
+## Core Operations
+
+The order management system provides three key operations:
+
+<CardGroup cols={3}>
+  <Card title="Query Status" icon="magnifying-glass" href="/examples/order-management/query-status">
+    Check the current status of any order using its order ID.
+  </Card>
+  
+  <Card title="Get Order ID" icon="hashtag" href="/examples/order-management/get-order-id">
+    Retrieve the order ID from a transaction hash.
+  </Card>
+  
+  <Card title="Cancel Order" icon="xmark" href="/examples/order-management/cancel-order">
+    Cancel pending orders before they are fulfilled.
+  </Card>
+</CardGroup>
+
+## API Endpoints
+
+All order management operations use the DLN Stats API:
+
+- **Base URL**: `https://stats-api.dln.trade/api`
+- **Get Order Status**: `GET /Orders/{orderId}`
+- **Get Order ID**: `GET /Transaction/{txHash}/orderIds`
+- **Get Filtered Orders**: `POST /Orders/filteredList`
+
+## Order States
+
+Orders can be in various states throughout their lifecycle:
+
+| State | Description |
+|-------|-------------|
+| `Created` | Order has been created on the source chain |
+| `Fulfilled` | Order has been completed successfully |
+| `SentUnlock` | Unlock transaction has been sent |
+| `ClaimedUnlock` | Unlock has been claimed |
+| `OrderCancelled` | Order was cancelled by the user |
+
+<Note>
+  The states `Fulfilled`, `SentUnlock`, and `ClaimedUnlock` are all considered fulfilled from the end-user's perspective.
+</Note>
+
+## Utility Functions
+
+The example repository provides utility functions for common order management tasks:
+
+```typescript
+// Get order status by order ID
+import { getOrderStatusByOrderId } from "./utils/deBridge"
+
+// Get order ID from transaction hash
+import { getOrderIdByTransactionHash } from "./utils/deBridge"
+
+// Get cancel order transaction
+import { getCancelOrderTx } from "./utils/deBridge"
+```
+
+## Next Steps
+
+<Steps>
+  <Step title="Query Order Status">
+    Learn how to check the status of your orders using the [Query Status](/examples/order-management/query-status) guide.
+  </Step>
+  
+  <Step title="Retrieve Order IDs">
+    Convert transaction hashes to order IDs with the [Get Order ID](/examples/order-management/get-order-id) guide.
+  </Step>
+  
+  <Step title="Cancel Orders">
+    Understand how to cancel pending orders in the [Cancel Order](/examples/order-management/cancel-order) guide.
+  </Step>
+</Steps>
+
+## Common Use Cases
+
+### Track Order Progress
+
+You can poll the order status endpoint to track an order's progress through its lifecycle:
+
+```typescript
+const orderId = "0xa4d57d3156f9d5322542f344ba29fc4cd58d973e2ca8aa94c039ca8b05f869f5";
+const status = await getOrderStatusByOrderId(orderId);
+console.log(status);
+```
+
+### Verify Transaction
+
+After submitting a transaction, retrieve the order ID to track it:
+
+```typescript
+const txHash = "0x24c0dcc5de8b1ab048e10149c410ce59c1e1058d083ffdad6d8b6acb445618f1";
+const { orderIds } = await getOrderIdByTransactionHash(txHash);
+const orderId = orderIds[0].stringValue;
+```
+
+### Emergency Cancellation
+
+If you need to cancel an order that hasn't been fulfilled yet:
+
+```typescript
+const cancelTx = await getCancelOrderTx(orderId);
+// Sign and send the cancellation transaction
+```
+
+<Warning>
+  You can only cancel orders that are still pending. Once an order is fulfilled, it cannot be cancelled.
+</Warning>

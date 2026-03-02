@@ -1,0 +1,526 @@
+---
+title: "Tron to Solana Transfers"
+description: "Bridge tokens from Tron to Solana using deBridge"
+---
+
+## Overview
+
+You can bridge tokens from Tron to Solana. Tron transactions use TronWeb for wallet management and a unique transaction signing process.
+
+## Complete Example: TRX to SOL
+
+This example transfers 5 TRX from Tron to Solana (as native SOL).
+
+```typescript tron-to-sol.ts
+import "dotenv/config";
+import { createDebridgeBridgeOrder } from "../../utils/deBridge/createDeBridgeOrder";
+import { deBridgeOrderInput } from "../../types";
+import { getEnvConfig } from "../../utils";
+import {
+  initTronWeb,
+  simulateTriggerContract,
+  clipHexPrefix,
+  calcFeeLimit,
+  toTronHex41,
+  checkTronTransactionReceipt,
+} from "../../utils/tron";
+import { CHAIN_IDS } from "../../utils/chains";
+import { SOL, TRX } from "../../utils/tokens";
+
+async function main() {
+  // Load environment variables
+  const { tronPrivateKey, tronRpcUrl, tronGridApiKey } = getEnvConfig();
+
+  const tronWeb = initTronWeb({
+    privateKey: tronPrivateKey,
+    rpcUrl: tronRpcUrl,
+    apiKey: tronGridApiKey,
+  });
+
+  // Get sender address
+  const senderBase58 = tronWeb.defaultAddress.base58;
+  if (!senderBase58) {
+    throw new Error("Failed to derive sender address from private key");
+  }
+
+  // Check current balance
+  const balanceSun = await tronWeb.trx.getBalance(senderBase58);
+  const balanceTrx = balanceSun / 1e6;
+
+  // Bridge parameters
+  const SOLANA_RECIPIENT = "862oLANNqhdXyUCwLJPBqUHrScrqNR4yoGWGTxjZftKs";
+  const amountTRX = 5;
+  const amountSun = String(amountTRX * 1e6);
+
+  // Create order
+  const orderInput: deBridgeOrderInput = {
+    srcChainId: CHAIN_IDS.TRON.toString(),
+    srcChainTokenIn: TRX.sentinel,
+    srcChainTokenInAmount: amountSun,
+    dstChainId: CHAIN_IDS.Solana.toString(),
+    dstChainTokenOut: SOL.nativeSol,
+    dstChainTokenOutRecipient: SOLANA_RECIPIENT,
+    account: senderBase58,
+    srcChainOrderAuthorityAddress: senderBase58,
+    dstChainOrderAuthorityAddress: SOLANA_RECIPIENT,
+  };
+
+  const order: any = await createDebridgeBridgeOrder(orderInput);
+  if (!order?.tx?.to || !order?.tx?.data || !order?.tx?.value) {
+    throw new Error("Invalid order: missing tx.to / tx.data / tx.value");
+  }
+
+  // Simulate transaction
+  const sim = await simulateTriggerContract(tronWeb, {
+    ownerAddress: senderBase58,
+    contractAddress: order.tx.to,
+    callValue: Number(order.tx.value),
+    data: order.tx.data,
+    label: "bridge",
+  });
+
+  if (!sim.ok) {
+    throw new Error(`Simulation failed: ${sim.error}`);
+  }
+
+  // Calculate fee limit
+  const estimatedEnergy = sim.energyUsed ?? 0;
+  const energyPriceSun = order.estimatedTransactionFee.details.gasPrice;
+  const feeBufferFactor = 1.3;
+  const feeLimit = calcFeeLimit(estimatedEnergy, energyPriceSun, feeBufferFactor);
+
+  // Check balance
+  const callValueSun = Number(order.tx.value);
+  const totalRequiredSun = callValueSun + feeLimit;
+
+  console.log("=== Balance precheck ===");
+  console.log("Current balance (TRX):", balanceTrx.toFixed(6));
+  console.log("callValue (TRX):      ", (callValueSun / 1e6).toFixed(6));
+  console.log("feeLimit (TRX):       ", (feeLimit / 1e6).toFixed(6));
+  console.log("total required (TRX): ", (totalRequiredSun / 1e6).toFixed(6));
+
+  if (balanceSun < totalRequiredSun) {
+    const missing = (totalRequiredSun - balanceSun) / 1e6;
+    throw new Error(`Insufficient balance. Missing ~${missing.toFixed(6)} TRX`);
+  }
+
+  // Build and sign transaction
+  const callDataHexNo0x = clipHexPrefix(order.tx.data);
+  const signerHex41Maybe = tronWeb.defaultAddress.hex;
+  if (!signerHex41Maybe) {
+    throw new Error("Failed to read defaultAddress.hex");
+  }
+  const signerHex41: string = signerHex41Maybe;
+  const contractHex41 = toTronHex41(tronWeb, order.tx.to);
+
+  const unsigned = await tronWeb.transactionBuilder.triggerSmartContract(
+    contractHex41,
+    "",
+    { callValue: callValueSun, input: callDataHexNo0x, feeLimit },
+    [],
+    signerHex41,
+  );
+
+  if (!unsigned.result?.result) {
+    throw new Error("Failed to build transaction");
+  }
+  console.log("PreparedTx:", unsigned?.transaction?.txID ?? "n/a");
+
+  const signed = await tronWeb.trx.sign(unsigned.transaction, tronPrivateKey);
+  const receipt = await tronWeb.trx.sendRawTransaction(signed);
+
+  const receiptCheck = checkTronTransactionReceipt(receipt);
+  if (!receiptCheck.success) {
+    throw new Error(receiptCheck.error);
+  }
+
+  console.log("TX Hash:", receipt.txid);
+  console.log(`TronScan: https://tronscan.org/#/transaction/${receipt.txid}`);
+}
+
+main().catch((err) => {
+  console.error("FATAL ERROR:", err?.message ?? err);
+  process.exitCode = 1;
+});
+```
+
+## Key Differences from EVM and Solana
+
+### TronWeb Setup
+
+Tron requires TronWeb initialization:
+
+```typescript
+import { initTronWeb } from "../../utils/tron";
+
+const tronWeb = initTronWeb({
+  privateKey: tronPrivateKey,
+  rpcUrl: tronRpcUrl,
+  apiKey: tronGridApiKey, // Required for TronGrid API
+});
+
+// Get sender address in base58 format
+const senderAddress = tronWeb.defaultAddress.base58;
+```
+
+### Transaction Simulation
+
+Tron requires transaction simulation before submission:
+
+```typescript
+import { simulateTriggerContract } from "../../utils/tron";
+
+const sim = await simulateTriggerContract(tronWeb, {
+  ownerAddress: senderAddress,
+  contractAddress: order.tx.to,
+  callValue: Number(order.tx.value),
+  data: order.tx.data,
+  label: "bridge",
+});
+
+if (!sim.ok) {
+  throw new Error(`Simulation failed: ${sim.error}`);
+}
+
+console.log(`Estimated energy: ${sim.energyUsed}`);
+```
+
+### Fee Calculation
+
+Calculate fee limit with buffer:
+
+```typescript
+import { calcFeeLimit } from "../../utils/tron";
+
+const estimatedEnergy = sim.energyUsed ?? 0;
+const energyPriceSun = order.estimatedTransactionFee.details.gasPrice;
+const feeBufferFactor = 1.3; // 30% buffer
+
+const feeLimit = calcFeeLimit(estimatedEnergy, energyPriceSun, feeBufferFactor);
+console.log(`Fee limit: ${feeLimit / 1e6} TRX`);
+```
+
+### Balance Check
+
+<Warning>
+  Always verify you have enough TRX for both the transfer amount and transaction fees.
+</Warning>
+
+```typescript
+const balanceSun = await tronWeb.trx.getBalance(senderAddress);
+const callValueSun = Number(order.tx.value);
+const totalRequiredSun = callValueSun + feeLimit;
+
+if (balanceSun < totalRequiredSun) {
+  const missing = (totalRequiredSun - balanceSun) / 1e6;
+  throw new Error(`Insufficient balance. Missing ${missing.toFixed(6)} TRX`);
+}
+
+console.log(`Balance: ${balanceSun / 1e6} TRX`);
+console.log(`Required: ${totalRequiredSun / 1e6} TRX`);
+```
+
+## Environment Setup
+
+Your `.env` file needs Tron-specific variables:
+
+```bash .env
+# Tron wallet private key (hex format)
+TRON_PRIVATE_KEY=your_tron_private_key
+
+# Tron RPC URL
+TRON_RPC_URL=https://api.trongrid.io
+
+# TronGrid API key (required)
+TRON_GRID_API_KEY=your_api_key
+```
+
+<Info>
+  You need a TronGrid API key to interact with the Tron network. Get one at [trongrid.io](https://www.trongrid.io/).
+</Info>
+
+## Native Token Transfers
+
+### TRX Decimals
+
+TRX uses 6 decimals (measured in SUN):
+
+```typescript
+// 1 TRX = 1,000,000 SUN
+const amountTRX = 5;
+const amountSun = String(amountTRX * 1e6); // "5000000"
+
+const orderInput = {
+  srcChainTokenIn: TRX.sentinel, // Native TRX
+  srcChainTokenInAmount: amountSun,
+};
+```
+
+### TRX Token Address
+
+<Note>
+  Native TRX uses a sentinel address, not a standard token address.
+</Note>
+
+```typescript
+import { TRX } from "../../utils/tokens";
+
+const orderInput = {
+  srcChainTokenIn: TRX.sentinel, // Special address for native TRX
+};
+```
+
+## Transaction Building
+
+Tron transactions require special handling:
+
+```typescript
+import { clipHexPrefix, toTronHex41 } from "../../utils/tron";
+
+// Remove 0x prefix from calldata
+const callDataHexNo0x = clipHexPrefix(order.tx.data);
+
+// Convert addresses to Tron hex41 format
+const signerHex41 = tronWeb.defaultAddress.hex;
+const contractHex41 = toTronHex41(tronWeb, order.tx.to);
+
+// Build unsigned transaction
+const unsigned = await tronWeb.transactionBuilder.triggerSmartContract(
+  contractHex41,
+  "",
+  { 
+    callValue: callValueSun, 
+    input: callDataHexNo0x, 
+    feeLimit 
+  },
+  [],
+  signerHex41,
+);
+
+if (!unsigned.result?.result) {
+  throw new Error("Failed to build transaction");
+}
+```
+
+## Transaction Submission
+
+Sign and send the transaction:
+
+```typescript
+// Sign transaction
+const signed = await tronWeb.trx.sign(unsigned.transaction, tronPrivateKey);
+
+// Send transaction
+const receipt = await tronWeb.trx.sendRawTransaction(signed);
+
+// Check receipt
+import { checkTronTransactionReceipt } from "../../utils/tron";
+
+const receiptCheck = checkTronTransactionReceipt(receipt);
+if (!receiptCheck.success) {
+  throw new Error(receiptCheck.error);
+}
+
+console.log(`TX Hash: ${receipt.txid}`);
+console.log(`TronScan: https://tronscan.org/#/transaction/${receipt.txid}`);
+```
+
+## Example: USDT from Tron to Solana
+
+```typescript usdt-tron-to-sol.ts
+import { USDT } from "../../utils/tokens";
+
+const amountUSDT = 10;
+const amountSun = String(amountUSDT * 1e6); // USDT on Tron has 6 decimals
+
+const orderInput: deBridgeOrderInput = {
+  srcChainId: CHAIN_IDS.TRON.toString(),
+  srcChainTokenIn: USDT.TRON,
+  srcChainTokenInAmount: amountSun,
+  dstChainId: CHAIN_IDS.Solana.toString(),
+  dstChainTokenOut: USDT.SOLANA,
+  dstChainTokenOutRecipient: solanaAddress,
+  account: senderBase58,
+  srcChainOrderAuthorityAddress: senderBase58,
+  dstChainOrderAuthorityAddress: solanaAddress,
+};
+```
+
+## Order Parameters
+
+Tron-specific order parameters:
+
+```typescript
+const orderInput: deBridgeOrderInput = {
+  srcChainId: CHAIN_IDS.TRON.toString(), // Tron chain ID
+  srcChainTokenIn: TRX.sentinel, // Native TRX
+  srcChainTokenInAmount: amountSun, // Amount in SUN
+  dstChainId: CHAIN_IDS.Solana.toString(),
+  dstChainTokenOut: SOL.nativeSol,
+  dstChainTokenOutRecipient: solanaAddress,
+  account: senderBase58, // Tron address in base58 format
+  srcChainOrderAuthorityAddress: senderBase58, // Tron address
+  dstChainOrderAuthorityAddress: solanaAddress, // Solana address
+};
+```
+
+## Tron Address Formats
+
+Tron uses multiple address formats:
+
+```typescript
+// Base58 format (default)
+const base58Address = tronWeb.defaultAddress.base58;
+console.log(base58Address); // "TQn9Y2khEsLJW1ChVWFMSMeRDow5KcbLSE"
+
+// Hex format
+const hexAddress = tronWeb.defaultAddress.hex;
+console.log(hexAddress); // "41a614f803b6fd780986a42c78ec9c7f77e6ded13c"
+```
+
+<Info>
+  Use base58 format for `account` and `srcChainOrderAuthorityAddress` parameters.
+</Info>
+
+## Error Handling
+
+Handle Tron-specific errors:
+
+```typescript
+try {
+  const receipt = await tronWeb.trx.sendRawTransaction(signed);
+  
+  const receiptCheck = checkTronTransactionReceipt(receipt);
+  if (!receiptCheck.success) {
+    throw new Error(receiptCheck.error);
+  }
+  
+  console.log("Transaction successful!");
+} catch (error) {
+  if (error.message?.includes("balance is not sufficient")) {
+    console.error("Insufficient TRX balance");
+  } else if (error.message?.includes("REVERT")) {
+    console.error("Contract execution reverted");
+  } else {
+    console.error("Transaction failed:", error);
+  }
+  process.exitCode = 1;
+}
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Always simulate transactions">
+    Simulate before sending to catch errors early:
+    
+    ```typescript
+    const sim = await simulateTriggerContract(tronWeb, {
+      ownerAddress: senderAddress,
+      contractAddress: order.tx.to,
+      callValue: Number(order.tx.value),
+      data: order.tx.data,
+      label: "bridge",
+    });
+    
+    if (!sim.ok) {
+      throw new Error(`Simulation failed: ${sim.error}`);
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Add fee buffer">
+    Use a buffer for fee limits to avoid out-of-energy errors:
+    
+    ```typescript
+    const feeBufferFactor = 1.3; // 30% buffer
+    const feeLimit = calcFeeLimit(
+      estimatedEnergy,
+      energyPriceSun,
+      feeBufferFactor
+    );
+    ```
+  </Accordion>
+
+  <Accordion title="Check balance before submission">
+    Verify sufficient balance for amount + fees:
+    
+    ```typescript
+    const totalRequired = callValue + feeLimit;
+    if (balance < totalRequired) {
+      throw new Error(`Insufficient balance. Required: ${totalRequired / 1e6} TRX`);
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Use TronGrid API key">
+    Always use an API key for reliable access:
+    
+    ```typescript
+    const tronWeb = initTronWeb({
+      privateKey: tronPrivateKey,
+      rpcUrl: "https://api.trongrid.io",
+      apiKey: tronGridApiKey, // Required
+    });
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Troubleshooting
+
+<Warning>
+  Tron has unique error messages. Always check simulation results before sending transactions.
+</Warning>
+
+### Common Issues
+
+**Insufficient balance**: Check both TRX and energy:
+
+```typescript
+const balance = await tronWeb.trx.getBalance(senderAddress);
+const accountResources = await tronWeb.trx.getAccountResources(senderAddress);
+
+console.log(`TRX balance: ${balance / 1e6}`);
+console.log(`Energy limit: ${accountResources.EnergyLimit ?? 0}`);
+console.log(`Energy used: ${accountResources.EnergyUsed ?? 0}`);
+```
+
+**Transaction simulation failed**: Check contract address and calldata:
+
+```typescript
+console.log(`Contract: ${order.tx.to}`);
+console.log(`CallValue: ${order.tx.value}`);
+console.log(`Calldata length: ${order.tx.data.length}`);
+```
+
+**Invalid private key**: Verify private key format:
+
+```typescript
+if (!tronPrivateKey || tronPrivateKey.length !== 64) {
+  throw new Error("Invalid Tron private key format (expected 64 hex characters)");
+}
+```
+
+**API rate limits**: Use your own TronGrid API key:
+
+```typescript
+const tronWeb = initTronWeb({
+  privateKey: tronPrivateKey,
+  rpcUrl: "https://api.trongrid.io",
+  apiKey: process.env.TRON_GRID_API_KEY,
+});
+```
+
+## Supported Tokens
+
+| Token | Tron Address | Decimals | Solana Equivalent |
+|-------|--------------|----------|-------------------|
+| TRX (native) | Sentinel address | 6 | SOL |
+| USDT | `TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t` | 6 | USDT |
+| USDC | `TEkxiTehnzSmSe2XqrBj4w32RUN966rdz8` | 6 | USDC |
+
+## Next Steps
+
+- Learn about [Solana to EVM transfers](/examples/cross-chain/solana-to-evm)
+- Explore [EVM to Solana transfers](/examples/cross-chain/evm-to-solana)
+- See [order status tracking](/examples/order-management/query-status)

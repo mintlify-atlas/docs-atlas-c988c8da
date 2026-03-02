@@ -1,0 +1,357 @@
+---
+title: "Cancel Orders"
+description: "Cancel pending deBridge orders before they are fulfilled"
+---
+
+## Overview
+
+You can cancel deBridge orders that are still pending fulfillment. This is useful when you need to reclaim your funds from an order that hasn't been picked up by solvers or when market conditions have changed.
+
+<Warning>
+  You can only cancel orders that haven't been fulfilled yet. Once an order is fulfilled, cancellation is not possible.
+</Warning>
+
+## Prerequisites
+
+- Node.js and npm installed
+- Environment variables configured (`.env` file)
+- An unfulfilled order ID
+- Private key for the wallet that created the order
+
+## How Cancellation Works
+
+To cancel an order, you need to:
+
+1. Get the cancellation transaction data from the DLN API
+2. Verify the transaction is for the correct chain and wallet
+3. Sign and submit the cancellation transaction on the destination chain
+
+<Note>
+  Cancellation must be done by the **destination chain authority address** (the wallet that has authority on the destination chain).
+</Note>
+
+## Finding an Order ID
+
+Before cancelling, you need the order ID. Here are several ways to find it:
+
+<AccordionGroup>
+  <Accordion title="From Transaction Hash" icon="code">
+    Use the `getOrderIdByTransactionHash` utility:
+    ```typescript
+    const { orderIds } = await getOrderIdByTransactionHash(txHash);
+    const orderId = orderIds[0].stringValue;
+    ```
+  </Accordion>
+  
+  <Accordion title="deBridge Explorer" icon="globe">
+    1. Visit [deBridge Explorer](https://app.debridge.finance/orders)
+    2. Search by your transaction hash or wallet address
+    3. Find the order ID in the URL: 
+       `https://app.debridge.finance/order?orderId=0x...`
+  </Accordion>
+  
+  <Accordion title="Create a Test Order" icon="flask">
+    For testing, create an intentionally stuck order:
+    ```bash
+    npx tsx src/scripts/orders/cancellation/stuck-order-sol-to-poly.ts
+    ```
+    
+    This creates an order with unrealistic parameters that won't be fulfilled, making it perfect for testing cancellation.
+  </Accordion>
+</AccordionGroup>
+
+## Implementation
+
+### Get Cancellation Transaction
+
+The `getCancelOrderTx` utility function retrieves the cancellation transaction details from the API:
+
+```typescript
+import { getCancelOrderTx } from "./utils/deBridge";
+
+const orderId = "0xc0b6853690f085eb232c47b57fe8aebb38e2426f391b0805094910f1863cec46";
+const cancelTx = await getCancelOrderTx(orderId);
+```
+
+<Note>
+  This function should be implemented in your `utils/deBridge/index.ts` file to call the appropriate DLN API endpoint.
+</Note>
+
+### Complete Cancellation Script
+
+Here's the complete example for cancelling an order:
+
+```typescript
+import { getAddress, TransactionReceipt, TransactionRequest, TransactionResponse, Wallet } from "ethers";
+import { getEnvConfig, getJsonRpcProviders } from "./utils";
+import { getCancelOrderTx } from "./utils/deBridge";
+
+async function main() {
+  const orderId = "0xc0b6853690f085eb232c47b57fe8aebb38e2426f391b0805094910f1863cec46";
+
+  // Get the cancellation transaction from the API
+  const cancelTx = await getCancelOrderTx(orderId);
+
+  const { privateKey } = getEnvConfig();
+  const { polygonProvider } = await getJsonRpcProviders();
+
+  // Set up wallet and signer
+  const wallet = new Wallet(privateKey);
+  const signer = wallet.connect(polygonProvider);
+  const senderAddress = await signer.getAddress();
+
+  const network = await signer.provider.getNetwork();
+
+  // Verify the chain ID matches
+  if (BigInt(cancelTx.chainId) !== network.chainId) {
+    throw new Error(`Expected wallet on chain ${cancelTx.chainId} but got ${network.chainId}`);
+  }
+
+  // Verify the sender address matches
+  if (getAddress(senderAddress) !== getAddress(cancelTx.from)) {
+    throw new Error("Sender not matching the order destination chain authority address");
+  }
+
+  // Prepare the transaction
+  const tx: TransactionRequest = {
+    to: cancelTx.to,
+    value: cancelTx.value,
+    data: cancelTx.data
+  };
+
+  console.log("\nTransaction Request Object:", tx);
+
+  // Estimate gas
+  try {
+    const estimateGasResponse = await signer.estimateGas(tx);
+    // Add 30% buffer
+    tx.gasLimit = (estimateGasResponse * 130n) / 100n;
+  } catch (error) {
+    console.error("\n🚨 Error estimating gas for the transaction:");
+    if (error instanceof Error) { console.error(` Message: ${error.message}`); }
+    else { console.error(" An unexpected error occurred:", error); }
+    process.exitCode = 1;
+  }
+
+  // Send the transaction
+  try {
+    console.log("\n--- Sending Cancel Order Transaction ---");
+
+    const txResponse: TransactionResponse = await signer.sendTransaction(tx);
+
+    console.log(`Transaction sent successfully!`);
+    console.log(` --> Transaction Hash: ${txResponse.hash}`);
+    console.log(` --> View on Polygonscan: https://polygonscan.com/tx/${txResponse.hash}`);
+
+    console.log("\nWaiting for transaction to be mined (awaiting 1 confirmation)...");
+    const txReceipt: TransactionReceipt | null = await txResponse.wait();
+
+    if (txReceipt) {
+      console.log("\nTransaction mined successfully!");
+      console.log(` Status: ${txReceipt.status === 1 ? '✅ Success' : '❌ Failed'}`);
+      console.log(` Block number: ${txReceipt.blockNumber}`);
+      console.log(` Gas used: ${txReceipt.gasUsed.toString()}`);
+    } else {
+      console.error("Transaction receipt was null. Transaction might have been dropped or replaced.");
+      console.error("Check the explorer link above for the final status of the hash:", txResponse.hash);
+    }
+
+  } catch (error) {
+    console.error("\n🚨 Error sending or waiting for the transaction:");
+    if (error instanceof Error) { console.error(` Message: ${error.message}`); }
+    else { console.error(" An unexpected error occurred:", error); }
+    process.exitCode = 1;
+  }
+
+  console.log("\n--- Script finished ---");
+  process.exitCode = 0;
+}
+
+main().catch((error) => {
+  if (!(error instanceof Error && error.message.includes("Token approval failed"))) {
+    console.error("\n🚨 FATAL ERROR in script execution:", error);
+  }
+  process.exitCode = 1;
+});
+```
+
+**Source**: `src/scripts/orders/cancellation/cancel-order.ts`
+
+## Running the Example
+
+<Steps>
+  <Step title="Set up environment">
+    Ensure your `.env` file contains the required variables:
+    ```bash
+    PRIVATE_KEY=your_private_key_here
+    POLYGON_RPC_URL=your_polygon_rpc_url
+    ```
+  </Step>
+  
+  <Step title="Update the order ID">
+    Open `src/scripts/orders/cancellation/cancel-order.ts` and replace the `orderId` value:
+    ```typescript
+    const orderId = "0xYOUR_ORDER_ID_HERE";
+    ```
+  </Step>
+  
+  <Step title="Run the cancellation script">
+    ```bash
+    npx tsx src/scripts/orders/cancellation/cancel-order.ts
+    ```
+  </Step>
+  
+  <Step title="Verify cancellation">
+    Check the transaction on the block explorer using the provided link, or query the order status:
+    ```bash
+    npx tsx src/scripts/orders/queries/get-order-status.ts
+    ```
+    
+    The order state should be `OrderCancelled`.
+  </Step>
+</Steps>
+
+## Creating a Test Order for Cancellation
+
+To practice cancellation, create an intentionally stuck order:
+
+```typescript
+// This creates an order requesting 20,000 POL for 0.01 SOL
+// This unrealistic exchange rate ensures no solver will fulfill it
+const orderInput: deBridgeOrderInput = {
+  srcChainId: CHAIN_IDS.Solana.toString(),
+  srcChainTokenIn: SOL.nativeSol,
+  srcChainTokenInAmount: ethers.parseUnits("0.01", 9).toString(),
+  dstChainId: CHAIN_IDS.Polygon.toString(),
+  dstChainTokenOut: EVM_NATIVE_TOKEN.address,
+  dstChainTokenOutRecipient: evmUserAddress,
+  dstChainTokenOutAmount: ethers.parseEther("20000").toString(),
+  account: solWallet.publicKey.toBase58(),
+  srcChainOrderAuthorityAddress: solWallet.publicKey.toBase58(),
+  dstChainOrderAuthorityAddress: evmUserAddress,
+};
+```
+
+**Source**: `src/scripts/orders/cancellation/stuck-order-sol-to-poly.ts`
+
+Run this script to create a test order:
+
+```bash
+npx tsx src/scripts/orders/cancellation/stuck-order-sol-to-poly.ts
+```
+
+The script outputs a transaction hash. Find the order ID using the deBridge Explorer:
+
+1. Visit `https://app.debridge.finance/orders?s={transactionHash}`
+2. The order ID appears in the URL when viewing the order details
+
+## Security Considerations
+
+<Warning>
+  **Important Security Checks**:
+  
+  - The script verifies the chain ID matches your wallet's network
+  - The sender address must match the destination chain authority address
+  - Only the wallet that created the order can cancel it
+  - Gas estimation includes a 30% buffer for safety
+</Warning>
+
+### Chain Verification
+
+```typescript
+if (BigInt(cancelTx.chainId) !== network.chainId) {
+  throw new Error(`Expected wallet on chain ${cancelTx.chainId} but got ${network.chainId}`);
+}
+```
+
+This prevents accidentally sending the transaction to the wrong chain.
+
+### Address Verification
+
+```typescript
+if (getAddress(senderAddress) !== getAddress(cancelTx.from)) {
+  throw new Error("Sender not matching the order destination chain authority address");
+}
+```
+
+This ensures only the authorized wallet can cancel the order.
+
+## Error Handling
+
+The script includes comprehensive error handling:
+
+<AccordionGroup>
+  <Accordion title="Gas Estimation Failure">
+    If gas estimation fails, the transaction won't be sent:
+    ```typescript
+    try {
+      const estimateGasResponse = await signer.estimateGas(tx);
+      tx.gasLimit = (estimateGasResponse * 130n) / 100n;
+    } catch (error) {
+      console.error("Error estimating gas:", error.message);
+      process.exitCode = 1;
+    }
+    ```
+  </Accordion>
+  
+  <Accordion title="Transaction Failure">
+    If the transaction is sent but fails:
+    ```typescript
+    if (txReceipt.status !== 1) {
+      console.log("Transaction failed!");
+    }
+    ```
+  </Accordion>
+  
+  <Accordion title="Order Already Fulfilled">
+    If you attempt to cancel a fulfilled order, the transaction will revert. Check the order status first:
+    ```typescript
+    const status = await getOrderStatusByOrderId(orderId);
+    if (status.orderState === "Fulfilled") {
+      throw new Error("Cannot cancel a fulfilled order");
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Check Status First" icon="magnifying-glass">
+    Always verify the order status before attempting cancellation:
+    ```typescript
+    const status = await getOrderStatusByOrderId(orderId);
+    console.log("Current state:", status.orderState);
+    ```
+  </Card>
+  
+  <Card title="Gas Buffer" icon="gas-pump">
+    The script adds a 30% gas buffer to prevent out-of-gas errors:
+    ```typescript
+    tx.gasLimit = (estimateGasResponse * 130n) / 100n;
+    ```
+  </Card>
+  
+  <Card title="Monitor Confirmation" icon="clock">
+    Wait for transaction confirmation before considering it complete:
+    ```typescript
+    const txReceipt = await txResponse.wait();
+    ```
+  </Card>
+  
+  <Card title="Verify Result" icon="check">
+    After cancellation, verify the order state changed to `OrderCancelled`.
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Query Status" icon="magnifying-glass" href="/examples/order-management/query-status">
+    Learn how to verify the cancellation was successful.
+  </Card>
+  
+  <Card title="Order Management Overview" icon="list" href="/examples/order-management/overview">
+    Return to the order management overview.
+  </Card>
+</CardGroup>

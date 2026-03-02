@@ -1,0 +1,180 @@
+---
+title: Supported Chains
+description: Chain IDs for all blockchains supported by deBridge
+---
+
+## Overview
+
+deBridge uses internal chain IDs which may differ from standard EVM chain IDs for some chains. Always use these chain IDs when interacting with the deBridge API.
+
+<Note>
+You can fetch the latest chain information by calling the deBridge API:
+`https://dln.debridge.finance/v1.0/supported-chains-info`
+</Note>
+
+## Chain ID Reference
+
+The following chain IDs are defined in the `CHAIN_IDS` constant:
+
+### EVM Chains (Standard Chain IDs)
+
+<ParamField path="Ethereum" type="number">
+  `1`
+</ParamField>
+
+<ParamField path="BNB" type="number">
+  `56` - BNB Smart Chain (formerly Binance Smart Chain)
+</ParamField>
+
+<ParamField path="Polygon" type="number">
+  `137`
+</ParamField>
+
+<ParamField path="Fantom" type="number">
+  `250`
+</ParamField>
+
+<ParamField path="Optimism" type="number">
+  `10`
+</ParamField>
+
+<ParamField path="Base" type="number">
+  `8453`
+</ParamField>
+
+<ParamField path="Arbitrum" type="number">
+  `42161`
+</ParamField>
+
+<ParamField path="Avalanche" type="number">
+  `43114`
+</ParamField>
+
+<ParamField path="Linea" type="number">
+  `59144`
+</ParamField>
+
+### Non-EVM Chains
+
+<ParamField path="Solana" type="number">
+  `7565164`
+</ParamField>
+
+<ParamField path="TRON" type="number">
+  `100000026`
+</ParamField>
+
+### deBridge Custom Chain IDs
+
+These chains use deBridge-specific chain IDs (starting from 100000000):
+
+<ParamField path="Neon" type="number">
+  `100000001`
+</ParamField>
+
+<ParamField path="Gnosis" type="number">
+  `100000002`
+</ParamField>
+
+<ParamField path="Metis" type="number">
+  `100000004`
+</ParamField>
+
+<ParamField path="Bitrock" type="number">
+  `100000005`
+</ParamField>
+
+<ParamField path="CrossFi" type="number">
+  `100000006`
+</ParamField>
+
+<ParamField path="Zilliqa" type="number">
+  `100000008`
+</ParamField>
+
+<ParamField path="Flow" type="number">
+  `100000009`
+</ParamField>
+
+<ParamField path="Cronos" type="number">
+  `100000010`
+</ParamField>
+
+<ParamField path="Story" type="number">
+  `100000013`
+</ParamField>
+
+<ParamField path="Sonic" type="number">
+  `100000014`
+</ParamField>
+
+<ParamField path="Zircuit" type="number">
+  `100000015`
+</ParamField>
+
+<ParamField path="Abstract" type="number">
+  `100000017`
+</ParamField>
+
+<ParamField path="Berachain" type="number">
+  `100000020`
+</ParamField>
+
+<ParamField path="BOB" type="number">
+  `100000021`
+</ParamField>
+
+<ParamField path="HyperEVM" type="number">
+  `100000022`
+</ParamField>
+
+<ParamField path="Mantle" type="number">
+  `100000023`
+</ParamField>
+
+<ParamField path="Plume" type="number">
+  `100000024`
+</ParamField>
+
+<ParamField path="Sophon" type="number">
+  `100000025`
+</ParamField>
+
+<ParamField path="Sei" type="number">
+  `100000027`
+</ParamField>
+
+<ParamField path="Plasma" type="number">
+  `100000028`
+</ParamField>
+
+<ParamField path="MegaETH" type="number">
+  `100000031`
+</ParamField>
+
+## Usage Example
+
+```typescript
+import { CHAIN_IDS } from './utils/chains';
+
+// Create a bridge order from Ethereum to Polygon
+const order = await createDebridgeBridgeOrder({
+  srcChainId: CHAIN_IDS.Ethereum.toString(),
+  dstChainId: CHAIN_IDS.Polygon.toString(),
+  // ... other parameters
+});
+```
+
+## Important Notes
+
+<Warning>
+- Lightlink (100000003) is currently suspended and not available for bridging
+- Always convert chain IDs to strings when passing them to API endpoints
+- deBridge custom chain IDs (100000000+) are different from standard EVM chain IDs
+</Warning>
+
+## Additional Resources
+
+<Card title="Official Documentation" icon="book" href="https://docs.debridge.com/dln-details/overview/fees-supported-chains">
+  View the official deBridge documentation for supported chains and fees
+</Card>

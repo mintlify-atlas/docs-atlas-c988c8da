@@ -1,0 +1,223 @@
+---
+title: "Query Order Status"
+description: "Check the status of your deBridge orders using the DLN API"
+---
+
+## Overview
+
+You can query the status of any deBridge order using its order ID. The status response includes detailed information about the order's current state, chain information, token amounts, and more.
+
+## Prerequisites
+
+- Node.js installed
+- An order ID from a previous transaction
+
+<Tip>
+  If you don't have an order ID, you can get it from a transaction hash using the [Get Order ID](/examples/order-management/get-order-id) guide.
+</Tip>
+
+## API Endpoint
+
+```
+GET https://stats-api.dln.trade/api/Orders/{orderId}
+```
+
+### Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `orderId` | string | The unique order identifier (32-byte hex string) |
+
+### Response
+
+The endpoint returns detailed order information including:
+
+- Order state and timestamps
+- Source and destination chain details
+- Token addresses and amounts
+- Transaction hashes
+- Fulfillment information
+
+## Implementation
+
+### Utility Function
+
+The example repository provides a utility function for querying order status:
+
+```typescript
+export async function getOrderStatusByOrderId(orderId: string) {
+  const URL = `https://stats-api.dln.trade/api/Orders/${orderId}`
+
+  const response = await fetch(URL);
+  
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(
+      `Failed to get order status by orderId: ${response.statusText}. ${errorText}`,
+    );
+  }
+
+  const data = await response.json();
+
+  if (data.error) {
+    throw new Error(`DeBridge API Error: ${data.error}`);
+  }
+
+  return data;
+}
+```
+
+### Complete Example
+
+Here's a complete example script that queries an order's status:
+
+```typescript
+import { getOrderStatusByOrderId } from "./utils/deBridge"
+
+async function main() {
+  // Set your orderId here - get it by calling the script from get-order-id.ts
+  const orderId = "0xa4d57d3156f9d5322542f344ba29fc4cd58d973e2ca8aa94c039ca8b05f869f5" 
+
+  console.log(await getOrderStatusByOrderId(orderId))
+}
+
+main()
+```
+
+**Source**: `src/scripts/orders/queries/get-order-status.ts`
+
+## Running the Example
+
+<Steps>
+  <Step title="Navigate to the project">
+    ```bash
+    cd api-integrator-example
+    ```
+  </Step>
+  
+  <Step title="Update the order ID">
+    Open `src/scripts/orders/queries/get-order-status.ts` and replace the `orderId` value with your order ID.
+  </Step>
+  
+  <Step title="Run the script">
+    ```bash
+    npx tsx src/scripts/orders/queries/get-order-status.ts
+    ```
+  </Step>
+</Steps>
+
+## Example Response
+
+A successful response includes comprehensive order details:
+
+```json
+{
+  "orderId": "0xa4d57d3156f9d5322542f344ba29fc4cd58d973e2ca8aa94c039ca8b05f869f5",
+  "orderState": "Fulfilled",
+  "giveChainId": 137,
+  "takeChainId": 42161,
+  "giveTokenAddress": "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174",
+  "takeTokenAddress": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+  "giveAmount": "5000000",
+  "takeAmount": "4950000",
+  "makerAddress": "0x...",
+  "receiverAddress": "0x...",
+  "createTransactionHash": "0x...",
+  "fulfillTransactionHash": "0x...",
+  "createdAt": "2024-01-15T10:30:00Z",
+  "fulfilledAt": "2024-01-15T10:31:30Z"
+}
+```
+
+## Error Handling
+
+The utility function includes comprehensive error handling:
+
+<AccordionGroup>
+  <Accordion title="HTTP Error Response">
+    If the API returns a non-200 status code:
+    ```typescript
+    Error: Failed to get order status by orderId: Not Found. Order not found
+    ```
+  </Accordion>
+  
+  <Accordion title="API Error Response">
+    If the API returns an error in the response body:
+    ```typescript
+    Error: DeBridge API Error: Invalid order ID format
+    ```
+  </Accordion>
+  
+  <Accordion title="Network Error">
+    If the network request fails:
+    ```typescript
+    Error: fetch failed
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Order States
+
+The `orderState` field can have the following values:
+
+<ResponseField name="Created" type="string">
+  Order has been created on the source chain but not yet fulfilled.
+</ResponseField>
+
+<ResponseField name="Fulfilled" type="string">
+  Order has been successfully completed on the destination chain.
+</ResponseField>
+
+<ResponseField name="SentUnlock" type="string">
+  The unlock transaction has been sent (for orders that weren't immediately fulfilled).
+</ResponseField>
+
+<ResponseField name="ClaimedUnlock" type="string">
+  The unlock funds have been claimed by the user.
+</ResponseField>
+
+<ResponseField name="OrderCancelled" type="string">
+  The order was cancelled before fulfillment.
+</ResponseField>
+
+<Note>
+  Orders in `Fulfilled`, `SentUnlock`, or `ClaimedUnlock` states are considered successfully completed from the user's perspective.
+</Note>
+
+## Polling for Updates
+
+You can poll the endpoint to track order progress:
+
+```typescript
+async function waitForOrderFulfillment(orderId: string, maxAttempts = 60) {
+  for (let i = 0; i < maxAttempts; i++) {
+    const status = await getOrderStatusByOrderId(orderId);
+    
+    if (status.orderState === "Fulfilled") {
+      console.log("Order fulfilled!");
+      return status;
+    }
+    
+    if (status.orderState === "OrderCancelled") {
+      throw new Error("Order was cancelled");
+    }
+    
+    console.log(`Attempt ${i + 1}: Order state is ${status.orderState}`);
+    await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 seconds
+  }
+  
+  throw new Error("Order fulfillment timeout");
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Get Order ID" icon="hashtag" href="/examples/order-management/get-order-id">
+    Learn how to retrieve order IDs from transaction hashes.
+  </Card>
+  
+  <Card title="Cancel Order" icon="xmark" href="/examples/order-management/cancel-order">
+    Understand how to cancel pending orders.
+  </Card>
+</CardGroup>

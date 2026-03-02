@@ -1,0 +1,287 @@
+---
+title: "Swap Estimation"
+description: "Get detailed swap estimations before executing transactions"
+---
+
+## Overview
+
+Before executing a same-chain swap, you can get a detailed estimation to preview:
+
+- Expected output token amount
+- Minimum output amount (accounting for slippage)
+- Transaction fees and gas costs
+- Recommended slippage settings
+
+This helps you make informed decisions and avoid unexpected results.
+
+## Getting an estimation
+
+Use the estimation endpoint to preview swap details without creating a full transaction:
+
+```typescript
+import { SameChainSwapEstimateInput } from './types';
+import { createDeBridgeSameChainSwapEstimate } from './utils/deBridge/sameChainSwapEstimate';
+
+const sameChainSwapEstimateInput: SameChainSwapEstimateInput = {
+  chainId: CHAIN_IDS.Polygon.toString(),
+  tokenIn: USDC.POLYGON,
+  tokenInAmount: amountInAtomicUnit.toString(),
+  tokenOut: EVM_NATIVE_TOKEN.address,
+};
+
+const estimate = await createDeBridgeSameChainSwapEstimate(sameChainSwapEstimateInput);
+```
+
+<Note>
+The estimation endpoint doesn't require `tokenOutRecipient` or `senderAddress`, making it perfect for preview purposes.
+</Note>
+
+## Estimation parameters
+
+### Required parameters
+
+- **chainId** - The blockchain network ID
+- **tokenIn** - Input token address
+- **tokenInAmount** - Amount to swap in atomic units
+- **tokenOut** - Output token address
+
+### Optional parameters
+
+- **slippage** - Slippage tolerance (default: `"auto"`)
+- **affiliateFeePercent** - Affiliate fee percentage
+- **affiliateFeeRecipient** - Address to receive affiliate fees
+
+## Understanding the response
+
+The estimation response contains detailed information about your swap:
+
+```typescript
+{
+  estimation: {
+    tokenIn: {
+      address: string,
+      name: string,
+      symbol: string,
+      decimals: number,
+      amount: string
+    },
+    tokenOut: {
+      address: string,
+      name: string,
+      symbol: string,
+      decimals: number,
+      amount: string,
+      minAmount: string
+    },
+    slippage: number,
+    recommendedSlippage: number,
+    estimatedTransactionFee: {
+      total: string,
+      details: {
+        gasLimit: string,
+        gasPrice: string,
+        baseFee: string,
+        maxFeePerGas: string,
+        maxPriorityFeePerGas: string,
+        txFee: string,
+        priorityFee: string
+      }
+    }
+  }
+}
+```
+
+## Response fields explained
+
+### Token information
+
+**tokenIn** - Details about the input token:
+- `amount` - Exact amount being swapped (in atomic units)
+- `decimals` - Number of decimals for the token
+- `symbol` - Token symbol (e.g., "USDC")
+
+**tokenOut** - Details about the output token:
+- `amount` - Expected amount you'll receive (in atomic units)
+- `minAmount` - Minimum amount guaranteed (accounting for slippage)
+- `decimals` - Number of decimals for the token
+- `symbol` - Token symbol (e.g., "MATIC")
+
+<Tip>
+Compare `amount` and `minAmount` to understand your slippage protection. The difference shows the maximum amount you could lose to slippage.
+</Tip>
+
+### Slippage values
+
+- **slippage** - The slippage tolerance applied to this swap (as a decimal, e.g., 0.005 = 0.5%)
+- **recommendedSlippage** - The API's recommended slippage based on current market conditions
+
+<Warning>
+If market conditions are volatile, consider using the `recommendedSlippage` value or higher to avoid failed transactions.
+</Warning>
+
+### Fee breakdown
+
+The `estimatedTransactionFee` object provides detailed gas cost information:
+
+- **total** - Total estimated fee in the native token (in atomic units)
+- **gasLimit** - Maximum gas units the transaction can use
+- **gasPrice** - Gas price in wei (for legacy transactions)
+- **baseFee** - Base fee per gas (EIP-1559)
+- **maxFeePerGas** - Maximum fee you're willing to pay per gas unit
+- **maxPriorityFeePerGas** - Maximum priority fee (tip to miners)
+- **txFee** - Base transaction fee
+- **priorityFee** - Additional priority fee
+
+## Example: Displaying estimates to users
+
+Here's how you might format estimation data for display:
+
+```typescript
+import { formatUnits } from "ethers";
+
+const estimate = await createDeBridgeSameChainSwapEstimate(input);
+const est = estimate.estimation;
+
+// Format input amount
+const inputAmount = formatUnits(
+  est.tokenIn.amount,
+  est.tokenIn.decimals
+);
+
+// Format expected output
+const outputAmount = formatUnits(
+  est.tokenOut.amount,
+  est.tokenOut.decimals
+);
+
+// Format minimum output
+const minOutputAmount = formatUnits(
+  est.tokenOut.minAmount,
+  est.tokenOut.decimals
+);
+
+// Format total fee
+const totalFee = formatUnits(
+  est.estimatedTransactionFee.total,
+  18 // Native token typically has 18 decimals
+);
+
+console.log(`Swapping: ${inputAmount} ${est.tokenIn.symbol}`);
+console.log(`Expected: ${outputAmount} ${est.tokenOut.symbol}`);
+console.log(`Minimum: ${minOutputAmount} ${est.tokenOut.symbol}`);
+console.log(`Slippage: ${(est.slippage * 100).toFixed(2)}%`);
+console.log(`Gas fee: ${totalFee} (native token)`);
+```
+
+This produces output like:
+```
+Swapping: 0.2 USDC
+Expected: 0.1523 MATIC
+Minimum: 0.1515 MATIC
+Slippage: 0.50%
+Gas fee: 0.000234 MATIC
+```
+
+## Complete estimation example
+
+Here's a complete example that gets an estimation and displays all relevant information:
+
+```typescript
+import 'dotenv/config';
+import { ethers, Wallet } from "ethers";
+import { SameChainSwapEstimateInput } from './types';
+import { createDeBridgeSameChainSwapEstimate } from './utils/deBridge/sameChainSwapEstimate';
+import { EVM_NATIVE_TOKEN, USDC } from './utils/tokens';
+import { CHAIN_IDS } from './utils/chains';
+
+async function main() {
+  const wallet = new Wallet(privateKey);
+  const signer = wallet.connect(polygonProvider);
+  const senderAddress = await signer.getAddress();
+
+  const usdcDecimals = 6;
+  const amountToSend = "0.2";
+  const amountInAtomicUnit = ethers.parseUnits(amountToSend, usdcDecimals);
+
+  const sameChainSwapEstimateInput: SameChainSwapEstimateInput = {
+    chainId: CHAIN_IDS.Polygon.toString(),
+    tokenIn: USDC.POLYGON,
+    tokenInAmount: amountInAtomicUnit.toString(),
+    tokenOut: EVM_NATIVE_TOKEN.address,
+  };
+
+  const swap = await createDeBridgeSameChainSwapEstimate(sameChainSwapEstimateInput);
+
+  if (!swap || !swap.estimation) {
+    throw new Error("Invalid estimation from API");
+  }
+
+  console.log("Order Estimation:", swap.estimation);
+}
+
+main().catch(console.error);
+```
+
+View the complete example at: `src/scripts/same-chain/estimation/estimation-example.ts:1`
+
+## API endpoint
+
+The estimation function calls the deBridge API endpoint:
+
+```
+GET https://api.debridge.finance/chain/estimation
+```
+
+### Query parameters
+
+- `chainId` - Chain ID (e.g., "137")
+- `tokenIn` - Input token address
+- `tokenInAmount` - Amount in atomic units
+- `tokenOut` - Output token address
+- `slippage` - Slippage tolerance (optional, default: "auto")
+- `affiliateFeePercent` - Affiliate fee percentage (optional)
+- `affiliateFeeRecipient` - Affiliate fee recipient address (optional)
+
+## When to use estimations
+
+Use the estimation endpoint to:
+
+<CardGroup cols={2}>
+  <Card title="Preview swaps" icon="eye">
+    Show users expected amounts before they confirm
+  </Card>
+  
+  <Card title="Compare rates" icon="scale-balanced">
+    Compare output amounts for different input amounts
+  </Card>
+  
+  <Card title="Check feasibility" icon="circle-check">
+    Verify a swap is possible before attempting it
+  </Card>
+  
+  <Card title="Calculate costs" icon="calculator">
+    Determine total costs including fees and slippage
+  </Card>
+</CardGroup>
+
+## Estimation vs. transaction creation
+
+The main difference between estimation and transaction creation:
+
+| Feature | Estimation | Transaction |
+|---------|-----------|-------------|
+| Returns transaction data | No | Yes |
+| Requires recipient address | No | Yes |
+| Requires sender address | No | Yes |
+| Can be executed | No | Yes |
+| Use case | Preview/analysis | Execution |
+
+<Tip>
+Get an estimation first to show users what to expect, then create the actual transaction when they're ready to proceed.
+</Tip>
+
+## Next steps
+
+<Card title="Execute token swaps" icon="code" href="/examples/same-chain/token-swaps">
+  Learn how to create and execute swap transactions with complete code examples
+</Card>
